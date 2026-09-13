@@ -1,0 +1,1744 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .smooth-transition { transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+        .glass-panel {
+            background: rgba(24, 24, 27, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(9, 9, 11, 0.8); }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+        .modal-blur { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details[open] > summary .chev { transform: rotate(90deg); }
+        .chev { transition: transform 0.2s ease; }
+        .collapsible-content { animation: slideDown 0.25s ease; }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        input[type="color"] {
+            -webkit-appearance: none; border: none; padding: 0; background: transparent;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: 1px solid #27272a; border-radius: 8px; }
+        .switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #27272a; transition: .25s; border-radius: 9999px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px;
+            background-color: #d4d4d8; transition: .25s; border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #e4e4e7; }
+        input:checked + .slider:before { transform: translateX(16px); background-color: #09090b; }
+        .server-card { transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+        .server-card:hover { transform: translateY(-2px); }
+        .server-card.selected {
+            background: linear-gradient(135deg, rgba(228,228,231,0.08), rgba(228,228,231,0.03));
+            border-color: rgba(228,228,231,0.5);
+        }
+        kbd {
+            background: #18181b;
+            border: 1px solid #3f3f46;
+            border-bottom-width: 2px;
+            border-radius: 6px;
+            padding: 2px 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #d4d4d8;
+        }
+        .fade-in { animation: fadeIn 0.25s ease; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.98); }
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-[#09090b] text-zinc-100 min-h-screen antialiased selection:bg-zinc-800">
+
+    <!-- ============ SERVER SELECTOR MODAL (press G) ============ -->
+    <div id="server-modal" class="fixed inset-0 bg-black/75 modal-blur hidden items-center justify-center p-4 z-[60] smooth-transition opacity-0 pointer-events-none">
+        <div class="glass-panel rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh] fade-in">
+            <div class="p-6 border-b border-zinc-800/80 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-lg text-zinc-100 flex items-center gap-2">
+                        <i data-lucide="server" class="w-5 h-5 text-zinc-300"></i> Server List
+                    </h3>
+                    <p class="text-xs text-zinc-400 mt-1">Select <span class="text-zinc-200 font-semibold">one</span> server to manage. All channel actions apply to this server only.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <kbd>Esc</kbd>
+                    <button onclick="closeServerModal()" class="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 rounded-xl smooth-transition">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-4 border-b border-zinc-800/80 bg-zinc-950/40">
+                <div class="relative">
+                    <i data-lucide="search" class="w-4 h-4 text-zinc-500 absolute left-3.5 top-3"></i>
+                    <input type="text" id="server-search" oninput="renderServerList()" placeholder="Search servers by name or ID..." class="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 smooth-transition" autocomplete="off">
+                </div>
+            </div>
+
+            <div id="server-list" class="p-4 overflow-y-auto flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+
+            <div class="p-4 border-t border-zinc-800/80 bg-zinc-900/80 flex items-center justify-between">
+                <span id="server-selection-count" class="text-xs text-zinc-400 font-medium">No server selected</span>
+                <div class="flex items-center gap-2">
+                    <button onclick="closeServerModal()" class="px-4 py-2 text-xs font-medium text-zinc-400 hover:text-zinc-200 smooth-transition">Cancel</button>
+                    <button onclick="applyServerSelection()" id="server-apply-btn" disabled class="px-4 py-2 bg-zinc-100 hover:bg-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-950 font-semibold text-xs rounded-xl smooth-transition flex items-center gap-1.5 shadow-md">
+                        <i data-lucide="check" class="w-3.5 h-3.5"></i> Apply Server
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ CHANNEL SELECTOR MODAL ============ -->
+    <div id="channel-modal" class="fixed inset-0 bg-black/70 modal-blur hidden items-center justify-center p-4 z-50 smooth-transition opacity-0 pointer-events-none">
+        <div class="glass-panel rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh] fade-in">
+            <div class="p-5 border-b border-zinc-800/80 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-sm text-zinc-100 flex items-center gap-2">
+                        <i data-lucide="layers" class="w-4 h-4 text-zinc-400"></i> Channel Picker
+                    </h3>
+                    <p class="text-[11px] text-zinc-400 mt-0.5">
+                        Server: <span id="channel-modal-guild" class="text-zinc-200 font-semibold">—</span> · Hold <kbd>Ctrl</kbd> to multi-select
+                    </p>
+                </div>
+                <button onclick="closeChannelModal()" class="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 rounded-xl smooth-transition">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="p-4 border-b border-zinc-800/80 bg-zinc-950/40 space-y-3">
+                <div class="relative">
+                    <i data-lucide="search" class="w-4 h-4 text-zinc-500 absolute left-3.5 top-3"></i>
+                    <input type="text" id="modal-search" oninput="renderModalChannels()" placeholder="Search channels..." class="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-10 pr-4 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 smooth-transition">
+                </div>
+                <div class="flex items-center gap-3 flex-wrap">
+                    <label class="flex items-center gap-1.5 text-[11px] text-zinc-400 cursor-pointer">
+                        <input type="checkbox" id="modal-filter-text" checked onchange="renderModalChannels()" class="accent-zinc-100"> Text
+                    </label>
+                    <label class="flex items-center gap-1.5 text-[11px] text-zinc-400 cursor-pointer">
+                        <input type="checkbox" id="modal-filter-announcement" checked onchange="renderModalChannels()" class="accent-zinc-100"> Announcement
+                    </label>
+                    <label class="flex items-center gap-1.5 text-[11px] text-zinc-400 cursor-pointer">
+                        <input type="checkbox" id="modal-filter-voice" checked onchange="renderModalChannels()" class="accent-zinc-100"> Voice
+                    </label>
+                    <div class="ml-auto flex items-center gap-2">
+                        <button onclick="selectAllChannels()" class="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[11px] text-zinc-300 hover:border-zinc-700 smooth-transition">Select All</button>
+                        <button onclick="clearModalSelection()" class="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[11px] text-zinc-300 hover:border-zinc-700 smooth-transition">Clear</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="modal-channels-list" class="p-4 overflow-y-auto flex-1"></div>
+
+            <div class="p-4 border-t border-zinc-800/80 bg-zinc-900/80 flex items-center justify-between">
+                <span id="modal-selection-count" class="text-xs text-zinc-400 font-medium">0 channels selected</span>
+                <div class="flex items-center gap-2">
+                    <button onclick="closeChannelModal()" class="px-4 py-2 text-xs font-medium text-zinc-400 hover:text-zinc-200 smooth-transition">Cancel</button>
+                    <button onclick="applyChannelSelection()" class="px-4 py-2 bg-zinc-100 hover:bg-zinc-300 text-zinc-950 font-semibold text-xs rounded-xl smooth-transition flex items-center gap-1.5 shadow-md">
+                        <i data-lucide="check" class="w-3.5 h-3.5"></i> Apply
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ ROLE SELECTOR MODAL ============ -->
+    <div id="role-modal" class="fixed inset-0 bg-black/70 modal-blur hidden items-center justify-center p-4 z-50 smooth-transition opacity-0 pointer-events-none">
+        <div class="glass-panel rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh] fade-in">
+            <div class="p-5 border-b border-zinc-800/80 flex items-center justify-between">
+                <h3 class="font-bold text-sm flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-zinc-400"></i> Select Role</h3>
+                <button onclick="closeRoleModal()" class="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 rounded-xl"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="p-4 border-b border-zinc-800/80 bg-zinc-950/40">
+                <div class="relative">
+                    <i data-lucide="search" class="w-4 h-4 text-zinc-500 absolute left-3.5 top-3"></i>
+                    <input type="text" id="role-search" oninput="renderRoleList()" placeholder="Search roles..." class="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                </div>
+            </div>
+            <div id="role-list" class="p-4 overflow-y-auto flex-1 space-y-1"></div>
+        </div>
+    </div>
+
+    <!-- ============ HEADER ============ -->
+    <header class="sticky top-0 z-40 border-b border-zinc-800/80 bg-[#09090b]/80 backdrop-blur-xl px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="p-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100 shadow-sm">
+                <i data-lucide="bot" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-sm tracking-tight text-zinc-100 flex items-center gap-2">
+                    Command Center <span class="px-2 py-0.5 text-[10px] bg-zinc-800/80 border border-zinc-700/60 rounded-full text-zinc-400 mono">v4.0</span>
+                </h1>
+                <p class="text-[11px] text-zinc-400 flex items-center gap-2">
+                    Press <kbd>G</kbd> to change server
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button onclick="openServerModal()" class="group flex items-center gap-2.5 px-3 py-2 bg-zinc-900/80 border border-zinc-800 hover:border-zinc-700 rounded-xl smooth-transition" title="Change server (G)">
+                <div id="active-server-icon" class="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-400">
+                    <i data-lucide="server" class="w-3.5 h-3.5"></i>
+                </div>
+                <div class="text-left">
+                    <div class="text-[10px] uppercase tracking-wider text-zinc-500 leading-none">Active Server</div>
+                    <div class="text-xs font-semibold text-zinc-100 leading-tight mt-0.5" id="active-server-name">None selected</div>
+                </div>
+                <kbd class="ml-1 group-hover:border-zinc-500">G</kbd>
+            </button>
+
+            <div class="hidden md:flex items-center gap-2 px-3 py-2 bg-zinc-900/80 border border-zinc-800 rounded-xl">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span class="text-xs text-zinc-300 font-medium" id="bot-username">Connecting...</span>
+                <span class="text-[10px] text-zinc-500 mono pl-1 border-l border-zinc-800" id="latency-display">0 ms</span>
+            </div>
+            <button onclick="toggleAutoRefresh()" id="autorefresh-btn" class="p-2 bg-zinc-900/80 border border-zinc-800 rounded-xl text-emerald-400 hover:text-zinc-100 hover:border-zinc-700 smooth-transition" title="Toggle Auto Refresh">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed top-24 right-6 hidden items-center gap-3 px-4 py-3 glass-panel rounded-xl shadow-2xl text-xs smooth-transition z-[70]">
+        <i id="toast-icon" data-lucide="info" class="w-4 h-4 text-zinc-300"></i>
+        <span id="toast-msg" class="text-zinc-200"></span>
+    </div>
+
+    <!-- ============ NO SERVER SELECTED OVERLAY ============ -->
+    <div id="no-server-overlay" class="fixed inset-0 bg-black/85 modal-blur z-30 hidden items-center justify-center p-4">
+        <div class="text-center max-w-md">
+            <div class="inline-flex p-5 bg-zinc-900 border border-zinc-800 rounded-2xl mb-5">
+                <i data-lucide="server-cog" class="w-10 h-10 text-zinc-400"></i>
+            </div>
+            <h2 class="text-2xl font-extrabold text-zinc-100 mb-2">No Server Selected</h2>
+            <p class="text-sm text-zinc-400 mb-6">You must select a server to use the dashboard. All channel actions are scoped to the selected server.</p>
+            <button onclick="openServerModal()" class="px-6 py-3 bg-zinc-100 hover:bg-zinc-300 text-zinc-950 font-bold rounded-xl text-sm smooth-transition inline-flex items-center gap-2 shadow-lg">
+                <i data-lucide="server" class="w-4 h-4"></i> Select a Server
+                <kbd class="!bg-zinc-300 !border-zinc-400 !text-zinc-800 ml-1">G</kbd>
+            </button>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto p-6 md:p-8 space-y-8">
+
+        <!-- ============ TAB NAVIGATION ============ -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-1 border-b border-zinc-800/60">
+            <button onclick="switchTab('overview')" data-tab="overview" class="tab-btn active px-4 py-2 rounded-xl text-xs font-semibold text-zinc-950 bg-zinc-100 smooth-transition flex items-center gap-2 shrink-0">
+                <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i> Overview
+            </button>
+            <button onclick="switchTab('broadcast')" data-tab="broadcast" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 smooth-transition flex items-center gap-2 shrink-0">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i> Broadcast
+            </button>
+            <button onclick="switchTab('moderation')" data-tab="moderation" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 smooth-transition flex items-center gap-2 shrink-0">
+                <i data-lucide="shield" class="w-3.5 h-3.5"></i> Moderation
+            </button>
+            <button onclick="switchTab('members')" data-tab="members" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 smooth-transition flex items-center gap-2 shrink-0">
+                <i data-lucide="users" class="w-3.5 h-3.5"></i> Members & Roles
+            </button>
+            <button onclick="switchTab('presence')" data-tab="presence" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 smooth-transition flex items-center gap-2 shrink-0">
+                <i data-lucide="activity" class="w-3.5 h-3.5"></i> Presence
+            </button>
+            <button onclick="switchTab('system')" data-tab="system" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 smooth-transition flex items-center gap-2 shrink-0">
+                <i data-lucide="terminal" class="w-3.5 h-3.5"></i> System
+            </button>
+            <button onclick="switchTab('logs')" data-tab="logs" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 smooth-transition flex items-center gap-2 shrink-0">
+                <i data-lucide="scroll-text" class="w-3.5 h-3.5"></i> Logs
+            </button>
+        </div>
+
+        <!-- ================= TAB: OVERVIEW ================= -->
+        <div id="tab-overview" class="tab-panel space-y-8">
+            <section class="glass-panel p-6 rounded-2xl">
+                <div class="flex items-center justify-between flex-wrap gap-4">
+                    <div class="flex items-center gap-4">
+                        <div id="ov-server-icon" class="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center text-lg font-bold text-zinc-400 border border-zinc-700/60">
+                            <i data-lucide="server" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wider text-zinc-500">Currently Managing</div>
+                            <h2 class="text-xl font-extrabold text-zinc-100" id="ov-server-name">No server selected</h2>
+                            <div class="text-xs text-zinc-400 mono mt-0.5" id="ov-server-id">—</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="text-right">
+                            <div class="text-[10px] uppercase tracking-wider text-zinc-500">Members</div>
+                            <div class="text-lg font-bold text-zinc-100" id="ov-member-count">—</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[10px] uppercase tracking-wider text-zinc-500">Channels</div>
+                            <div class="text-lg font-bold text-zinc-100" id="ov-channel-count">—</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[10px] uppercase tracking-wider text-zinc-500">Roles</div>
+                            <div class="text-lg font-bold text-zinc-100" id="ov-role-count">—</div>
+                        </div>
+                        <button onclick="openServerModal()" class="ml-3 px-4 py-2 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-xl text-xs text-zinc-200 font-semibold smooth-transition flex items-center gap-2">
+                            <i data-lucide="repeat" class="w-3.5 h-3.5"></i> Change
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="glass-panel p-5 rounded-2xl hover:border-zinc-700/80 smooth-transition">
+                    <div class="flex items-center justify-between text-zinc-400 mb-3">
+                        <span class="text-[11px] font-bold uppercase tracking-wider">CPU Usage</span>
+                        <i data-lucide="cpu" class="w-4 h-4"></i>
+                    </div>
+                    <div class="text-2xl font-extrabold text-zinc-100" id="cpu-val">0%</div>
+                    <div class="w-full bg-zinc-800/80 h-1.5 rounded-full mt-3 overflow-hidden">
+                        <div id="cpu-bar" class="bg-zinc-100 h-full w-0 smooth-transition"></div>
+                    </div>
+                    <div class="text-[10px] text-zinc-500 mono mt-2" id="cpu-cores">0 cores</div>
+                </div>
+
+                <div class="glass-panel p-5 rounded-2xl hover:border-zinc-700/80 smooth-transition">
+                    <div class="flex items-center justify-between text-zinc-400 mb-3">
+                        <span class="text-[11px] font-bold uppercase tracking-wider">RAM Memory</span>
+                        <i data-lucide="hard-drive" class="w-4 h-4"></i>
+                    </div>
+                    <div class="text-2xl font-extrabold text-zinc-100" id="ram-val">0%</div>
+                    <div class="w-full bg-zinc-800/80 h-1.5 rounded-full mt-3 overflow-hidden">
+                        <div id="ram-bar" class="bg-zinc-100 h-full w-0 smooth-transition"></div>
+                    </div>
+                    <div class="text-[10px] text-zinc-500 mono mt-2" id="ram-detail">0 / 0 GB</div>
+                </div>
+
+                <div class="glass-panel p-5 rounded-2xl hover:border-zinc-700/80 smooth-transition">
+                    <div class="flex items-center justify-between text-zinc-400 mb-3">
+                        <span class="text-[11px] font-bold uppercase tracking-wider">Active Guilds</span>
+                        <i data-lucide="server" class="w-4 h-4"></i>
+                    </div>
+                    <div class="text-2xl font-extrabold text-zinc-100" id="guild-val">0</div>
+                    <p class="text-[11px] text-zinc-500 mono mt-2" id="member-total">0 members total</p>
+                </div>
+
+                <div class="glass-panel p-5 rounded-2xl hover:border-zinc-700/80 smooth-transition">
+                    <div class="flex items-center justify-between text-zinc-400 mb-3">
+                        <span class="text-[11px] font-bold uppercase tracking-wider">Gateway Latency</span>
+                        <i data-lucide="zap" class="w-4 h-4"></i>
+                    </div>
+                    <div class="text-2xl font-extrabold text-zinc-100" id="ping-val">0 ms</div>
+                    <p class="text-[11px] text-zinc-500 mono mt-2" id="uptime-display">Uptime: --</p>
+                </div>
+            </section>
+
+            <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="glass-panel p-5 rounded-2xl">
+                    <div class="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2 flex items-center gap-2">
+                        <i data-lucide="monitor" class="w-3.5 h-3.5"></i> Host OS
+                    </div>
+                    <div class="text-xs text-zinc-200 mono" id="os-info">--</div>
+                </div>
+                <div class="glass-panel p-5 rounded-2xl">
+                    <div class="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2 flex items-center gap-2">
+                        <i data-lucide="gauge" class="w-3.5 h-3.5"></i> Bot Process
+                    </div>
+                    <div class="text-xs text-zinc-200 mono" id="proc-info">--</div>
+                </div>
+                <div class="glass-panel p-5 rounded-2xl">
+                    <div class="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2 flex items-center gap-2">
+                        <i data-lucide="network" class="w-3.5 h-3.5"></i> Network I/O
+                    </div>
+                    <div class="text-xs text-zinc-200 mono" id="net-info">--</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ================= TAB: BROADCAST ================= -->
+        <div id="tab-broadcast" class="tab-panel hidden space-y-8">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2 space-y-8">
+                    <section class="glass-panel p-6 rounded-2xl space-y-6">
+                        <div class="flex items-center justify-between border-b border-zinc-800/80 pb-4">
+                            <div>
+                                <h2 class="font-bold text-base text-zinc-100 flex items-center gap-2">
+                                    <i data-lucide="send" class="w-4 h-4 text-zinc-400"></i> Broadcaster & Embed Dispatcher
+                                </h2>
+                                <p class="text-xs text-zinc-400 mt-0.5">Sending to <span id="broadcast-guild-label" class="text-zinc-200 font-semibold">—</span></p>
+                            </div>
+                            <button onclick="openChannelModal()" class="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-200 hover:border-zinc-700 smooth-transition flex items-center gap-1.5">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Channels
+                            </button>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Target Channel(s)</label>
+                                <div class="relative">
+                                    <input type="text" id="dispatch-channel-input" readonly onclick="openChannelModal()" placeholder="Click to select channels..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 cursor-pointer focus:outline-none focus:border-zinc-600 smooth-transition">
+                                    <i data-lucide="chevron-down" class="w-4 h-4 text-zinc-500 absolute right-3.5 top-3 pointer-events-none"></i>
+                                </div>
+                                <div id="selected-tags" class="flex flex-wrap gap-2 mt-3"></div>
+                            </div>
+
+                            <details class="group bg-zinc-950/60 border border-zinc-800 rounded-xl">
+                                <summary class="p-3.5 cursor-pointer flex items-center justify-between">
+                                    <span class="text-xs font-semibold text-zinc-300 flex items-center gap-2">
+                                        <i data-lucide="sliders-horizontal" class="w-4 h-4 text-zinc-400"></i> Delivery Options
+                                    </span>
+                                    <i data-lucide="chevron-right" class="chev w-4 h-4 text-zinc-500"></i>
+                                </summary>
+                                <div class="collapsible-content p-4 space-y-3 border-t border-zinc-800/80">
+                                    <label class="flex items-center gap-3 text-xs text-zinc-300 cursor-pointer">
+                                        <input type="checkbox" id="opt-tts" class="accent-zinc-100">
+                                        <span>Text-to-Speech message</span>
+                                    </label>
+                                    <label class="flex items-center gap-3 text-xs text-zinc-300 cursor-pointer">
+                                        <input type="checkbox" id="opt-silent" class="accent-zinc-100">
+                                        <span>Suppress notifications (@silent)</span>
+                                    </label>
+                                    <label class="flex items-center gap-3 text-xs text-zinc-300 cursor-pointer">
+                                        <input type="checkbox" id="opt-delay" class="accent-zinc-100">
+                                        <span>Delete after 10 seconds</span>
+                                    </label>
+                                    <div>
+                                        <label class="block text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">Delay between channels (ms)</label>
+                                        <input type="number" id="opt-channel-delay" value="0" min="0" max="5000" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                                    </div>
+                                </div>
+                            </details>
+
+                            <div class="flex items-center justify-between p-3.5 bg-zinc-950/60 border border-zinc-800 rounded-xl">
+                                <span class="text-xs font-semibold text-zinc-300 flex items-center gap-2">
+                                    <i data-lucide="layout-template" class="w-4 h-4 text-zinc-400"></i> Rich Embed Mode
+                                </span>
+                                <label class="switch">
+                                    <input type="checkbox" id="embed-toggle" onchange="toggleEmbedFields()">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div id="embed-fields" class="hidden space-y-4 p-4 bg-zinc-950/40 border border-zinc-800/80 rounded-xl smooth-transition">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Embed Title</label>
+                                        <input type="text" id="embed-title" placeholder="Announcement Title" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Color</label>
+                                        <div class="flex gap-2">
+                                            <input type="color" id="embed-color-picker" value="#5865F2" class="w-10 h-9 rounded-xl cursor-pointer">
+                                            <input type="text" id="embed-color" value="#5865F2" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-xs mono focus:outline-none focus:border-zinc-600">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Author Name</label>
+                                    <input type="text" id="embed-author" placeholder="Author" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Thumbnail URL</label>
+                                        <input type="text" id="embed-thumbnail" placeholder="https://..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Image URL</label>
+                                        <input type="text" id="embed-image" placeholder="https://..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Footer</label>
+                                    <input type="text" id="embed-footer" placeholder="Footer text" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                                </div>
+                                <label class="flex items-center gap-3 text-xs text-zinc-300 cursor-pointer">
+                                    <input type="checkbox" id="embed-timestamp" class="accent-zinc-100">
+                                    <span>Include timestamp</span>
+                                </label>
+                            </div>
+
+                            <div>
+                                <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Message Body</label>
+                                <textarea id="dispatch-content" rows="5" placeholder="Enter message or embed description..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs focus:outline-none focus:border-zinc-600 resize-none"></textarea>
+                                <div class="text-[10px] text-zinc-500 text-right mt-1"><span id="char-count">0</span> characters</div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="sendDispatch()" class="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 hover:bg-zinc-300 font-bold py-3 rounded-xl text-xs smooth-transition shadow-lg">
+                                    <i data-lucide="send" class="w-3.5 h-3.5"></i> Transmit
+                                </button>
+                                <button onclick="previewMessage()" class="w-full flex items-center justify-center gap-2 bg-zinc-900 border border-zinc-800 text-zinc-200 hover:border-zinc-700 font-bold py-3 rounded-xl text-xs smooth-transition">
+                                    <i data-lucide="eye" class="w-3.5 h-3.5"></i> Preview
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="space-y-8">
+                    <section class="glass-panel p-6 rounded-2xl space-y-4">
+                        <div class="border-b border-zinc-800/80 pb-3">
+                            <h3 class="font-bold text-sm text-zinc-100 flex items-center gap-2">
+                                <i data-lucide="history" class="w-4 h-4 text-zinc-400"></i> Recent Broadcasts
+                            </h3>
+                        </div>
+                        <div id="broadcast-history" class="space-y-2 text-[11px] text-zinc-400 max-h-72 overflow-y-auto">
+                            <div class="text-zinc-600 italic">No broadcasts yet.</div>
+                        </div>
+                    </section>
+
+                    <section class="glass-panel p-6 rounded-2xl space-y-3">
+                        <div class="border-b border-zinc-800/80 pb-3">
+                            <h3 class="font-bold text-sm text-zinc-100 flex items-center gap-2">
+                                <i data-lucide="file-text" class="w-4 h-4 text-zinc-400"></i> Quick Templates
+                            </h3>
+                        </div>
+                        <button onclick="loadTemplate('announcement')" class="w-full text-left p-3 bg-zinc-950/60 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:border-zinc-700 smooth-transition">📢 Announcement</button>
+                        <button onclick="loadTemplate('update')" class="w-full text-left p-3 bg-zinc-950/60 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:border-zinc-700 smooth-transition">🔧 Update Notice</button>
+                        <button onclick="loadTemplate('event')" class="w-full text-left p-3 bg-zinc-950/60 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:border-zinc-700 smooth-transition">🎉 Event</button>
+                        <button onclick="loadTemplate('warning')" class="w-full text-left p-3 bg-zinc-950/60 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:border-zinc-700 smooth-transition">⚠️ Warning</button>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= TAB: MODERATION ================= -->
+        <div id="tab-moderation" class="tab-panel hidden space-y-8">
+            <section class="glass-panel p-6 rounded-2xl space-y-6">
+                <div class="border-b border-zinc-800/80 pb-4 flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                        <h2 class="font-bold text-base text-zinc-100 flex items-center gap-2">
+                            <i data-lucide="shield" class="w-4 h-4 text-zinc-400"></i> Server Moderation Suite
+                        </h2>
+                        <p class="text-xs text-zinc-400 mt-0.5">Operating on <span id="mod-guild-label" class="text-zinc-200 font-semibold">—</span> · Actions apply to selected channel(s).</p>
+                    </div>
+                    <button onclick="openChannelModal()" class="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-200 hover:border-zinc-700 smooth-transition flex items-center gap-1.5">
+                        <i data-lucide="hash" class="w-3.5 h-3.5"></i> <span id="mod-channel-count">0</span> Channels
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                            <i data-lucide="trash-2" class="w-4 h-4 text-zinc-400"></i> Mass Purge
+                        </div>
+                        <input type="number" id="purge-amount" placeholder="Amount (e.g. 20)" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                        <label class="flex items-center gap-2 text-[11px] text-zinc-400 cursor-pointer">
+                            <input type="checkbox" id="purge-bots-only" class="accent-zinc-100"> Bots only
+                        </label>
+                        <button onclick="executePurge()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Purge</button>
+                    </div>
+
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                            <i data-lucide="clock" class="w-4 h-4 text-zinc-400"></i> Slowmode
+                        </div>
+                        <select id="slowmode-preset" onchange="document.getElementById('slowmode-seconds').value = this.value" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <option value="">Presets...</option>
+                            <option value="0">Off (0s)</option>
+                            <option value="5">5 seconds</option>
+                            <option value="10">10 seconds</option>
+                            <option value="30">30 seconds</option>
+                            <option value="60">1 minute</option>
+                            <option value="300">5 minutes</option>
+                            <option value="3600">1 hour</option>
+                            <option value="21600">6 hours</option>
+                        </select>
+                        <input type="number" id="slowmode-seconds" placeholder="Seconds" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                        <button onclick="executeSlowmode()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Apply</button>
+                    </div>
+
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                            <i data-lucide="lock" class="w-4 h-4 text-zinc-400"></i> Lockdown
+                        </div>
+                        <p class="text-[10px] text-zinc-500">Toggle Send Messages for @everyone.</p>
+                        <button onclick="executeLockdown()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Toggle Lock</button>
+                    </div>
+
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                            <i data-lucide="pencil" class="w-4 h-4 text-zinc-400"></i> Rename
+                        </div>
+                        <input type="text" id="rename-text" placeholder="new-name" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                        <button onclick="executeRename()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Rename</button>
+                    </div>
+
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                            <i data-lucide="text" class="w-4 h-4 text-zinc-400"></i> Set Topic
+                        </div>
+                        <input type="text" id="topic-text" placeholder="Channel topic" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                        <button onclick="executeTopic()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Set Topic</button>
+                    </div>
+
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                            <i data-lucide="alert-triangle" class="w-4 h-4 text-zinc-400"></i> NSFW
+                        </div>
+                        <select id="nsfw-state" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <option value="on">Enable</option>
+                            <option value="off">Disable</option>
+                        </select>
+                        <button onclick="executeNsfw()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Apply</button>
+                    </div>
+
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                            <i data-lucide="archive" class="w-4 h-4 text-zinc-400"></i> Archive / Unarchive
+                        </div>
+                        <select id="archive-state" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <option value="archive">Archive</option>
+                            <option value="unarchive">Unarchive</option>
+                        </select>
+                        <button onclick="executeArchive()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Apply</button>
+                    </div>
+
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                            <i data-lucide="copy" class="w-4 h-4 text-zinc-400"></i> Clone
+                        </div>
+                        <p class="text-[10px] text-zinc-500">Clone selected channel(s) with same settings.</p>
+                        <button onclick="executeClone()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Clone</button>
+                    </div>
+
+                    <div class="p-4 bg-zinc-950/60 border border-red-900/40 rounded-xl space-y-3">
+                        <div class="flex items-center gap-2 text-xs font-semibold text-red-300">
+                            <i data-lucide="x-octagon" class="w-4 h-4"></i> Delete Channels
+                        </div>
+                        <label class="flex items-center gap-2 text-[11px] text-red-300 cursor-pointer">
+                            <input type="checkbox" id="delete-confirm" class="accent-red-500"> I understand this is permanent
+                        </label>
+                        <button onclick="executeDelete()" class="w-full bg-red-900/40 hover:bg-red-900/60 border border-red-900/60 text-red-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Delete</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="glass-panel p-6 rounded-2xl space-y-5">
+                <div class="border-b border-zinc-800/80 pb-4">
+                    <h2 class="font-bold text-base text-zinc-100 flex items-center gap-2">
+                        <i data-lucide="key-round" class="w-4 h-4 text-zinc-400"></i> Permission Overwrites
+                    </h2>
+                    <p class="text-xs text-zinc-400 mt-0.5">Apply permission changes for a role on selected channels.</p>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Target Role</label>
+                        <div class="flex gap-2">
+                            <button onclick="openRoleModal('perm')" class="flex-1 p-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:border-zinc-700 smooth-transition text-left" id="perm-target-display">Select role...</button>
+                            <button onclick="clearPermTarget()" class="p-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-400 hover:text-zinc-100 smooth-transition"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Permission</label>
+                        <select id="perm-name" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <option value="send_messages">Send Messages</option>
+                            <option value="read_messages">Read Messages</option>
+                            <option value="add_reactions">Add Reactions</option>
+                            <option value="attach_files">Attach Files</option>
+                            <option value="embed_links">Embed Links</option>
+                            <option value="manage_messages">Manage Messages</option>
+                            <option value="mention_everyone">Mention Everyone</option>
+                            <option value="create_public_threads">Create Public Threads</option>
+                            <option value="create_private_threads">Create Private Threads</option>
+                            <option value="use_application_commands">Use App Commands</option>
+                            <option value="connect">Connect (Voice)</option>
+                            <option value="speak">Speak (Voice)</option>
+                            <option value="stream">Stream (Voice)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-3">
+                    <select id="perm-state" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                        <option value="allow">Allow</option>
+                        <option value="deny">Deny</option>
+                        <option value="neutral">Neutral (reset)</option>
+                    </select>
+                    <button onclick="executePermOverwrite()" class="px-4 py-2 bg-zinc-100 text-zinc-950 hover:bg-zinc-300 font-bold rounded-xl text-xs smooth-transition">Apply Overwrite</button>
+                </div>
+            </section>
+        </div>
+
+        <!-- ================= TAB: MEMBERS & ROLES ================= -->
+        <div id="tab-members" class="tab-panel hidden space-y-8">
+            <div class="glass-panel p-4 rounded-2xl flex items-center gap-3">
+                <i data-lucide="info" class="w-4 h-4 text-zinc-400 shrink-0"></i>
+                <p class="text-xs text-zinc-400">Managing <span id="members-guild-label" class="text-zinc-200 font-semibold">—</span>. Press <kbd>G</kbd> to change server.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <section class="glass-panel p-6 rounded-2xl space-y-5">
+                    <div class="border-b border-zinc-800/80 pb-4">
+                        <h2 class="font-bold text-base text-zinc-100 flex items-center gap-2">
+                            <i data-lucide="user-cog" class="w-4 h-4 text-zinc-400"></i> Member Management
+                        </h2>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                            <div class="text-xs font-semibold text-zinc-200 flex items-center gap-2"><i data-lucide="gavel" class="w-4 h-4 text-zinc-400"></i> Ban Member</div>
+                            <input type="text" id="ban-user-id" placeholder="User ID" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <input type="text" id="ban-reason" placeholder="Reason (optional)" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <label class="flex items-center gap-2 text-[11px] text-zinc-400 cursor-pointer"><input type="checkbox" id="ban-delete-days" class="accent-zinc-100"> Delete 1 day of messages</label>
+                            <button onclick="executeBan()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Ban</button>
+                        </div>
+
+                        <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                            <div class="text-xs font-semibold text-zinc-200 flex items-center gap-2"><i data-lucide="hammer" class="w-4 h-4 text-zinc-400"></i> Kick Member</div>
+                            <input type="text" id="kick-user-id" placeholder="User ID" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <input type="text" id="kick-reason" placeholder="Reason (optional)" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <button onclick="executeKick()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Kick</button>
+                        </div>
+
+                        <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                            <div class="text-xs font-semibold text-zinc-200 flex items-center gap-2"><i data-lucide="timer" class="w-4 h-4 text-zinc-400"></i> Timeout Member</div>
+                            <input type="text" id="timeout-user-id" placeholder="User ID" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <select id="timeout-duration" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                                <option value="60">60 seconds</option>
+                                <option value="300">5 minutes</option>
+                                <option value="600">10 minutes</option>
+                                <option value="3600">1 hour</option>
+                                <option value="86400">1 day</option>
+                                <option value="604800">1 week</option>
+                                <option value="0">Remove timeout</option>
+                            </select>
+                            <button onclick="executeTimeout()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Timeout</button>
+                        </div>
+
+                        <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                            <div class="text-xs font-semibold text-zinc-200 flex items-center gap-2"><i data-lucide="message-circle" class="w-4 h-4 text-zinc-400"></i> Send DM</div>
+                            <input type="text" id="dm-user-id" placeholder="User ID" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <textarea id="dm-content" rows="2" placeholder="Message..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-zinc-600 resize-none"></textarea>
+                            <button onclick="executeDm()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Send DM</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="glass-panel p-6 rounded-2xl space-y-5">
+                    <div class="border-b border-zinc-800/80 pb-4">
+                        <h2 class="font-bold text-base text-zinc-100 flex items-center gap-2">
+                            <i data-lucide="shield-check" class="w-4 h-4 text-zinc-400"></i> Role Management
+                        </h2>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="text-xs font-semibold text-zinc-200 flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-zinc-400"></i> Create Role</div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <input type="text" id="role-new-name" placeholder="Role name" class="col-span-2 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                            <input type="color" id="role-new-color" value="#5865F2" class="w-full h-9 rounded-lg cursor-pointer">
+                            <label class="flex items-center gap-2 text-[11px] text-zinc-400 cursor-pointer"><input type="checkbox" id="role-new-hoist" class="accent-zinc-100"> Hoist</label>
+                            <label class="flex items-center gap-2 text-[11px] text-zinc-400 cursor-pointer"><input type="checkbox" id="role-new-mentionable" checked class="accent-zinc-100"> Mentionable</label>
+                        </div>
+                        <button onclick="executeCreateRole()" class="w-full bg-zinc-100 text-zinc-950 hover:bg-zinc-300 font-bold py-2 rounded-lg text-xs smooth-transition">Create Role</button>
+                    </div>
+
+                    <div class="pt-4 border-t border-zinc-800/80 space-y-3">
+                        <div class="text-xs font-semibold text-zinc-200 flex items-center gap-2"><i data-lucide="user-plus" class="w-4 h-4 text-zinc-400"></i> Assign Role</div>
+                        <button onclick="openRoleModal('assign')" class="w-full text-left p-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:border-zinc-700" id="assign-role-display">Select role...</button>
+                        <div class="grid grid-cols-2 gap-3">
+                            <input type="text" id="assign-user-id" placeholder="User ID" class="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                            <select id="assign-action" class="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-zinc-600">
+                                <option value="add">Add</option>
+                                <option value="remove">Remove</option>
+                            </select>
+                        </div>
+                        <button onclick="executeAssignRole()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Apply</button>
+                    </div>
+
+                    <div class="pt-4 border-t border-zinc-800/80 space-y-3">
+                        <div class="text-xs font-semibold text-red-300 flex items-center gap-2"><i data-lucide="trash" class="w-4 h-4"></i> Delete Role</div>
+                        <button onclick="openRoleModal('delete')" class="w-full text-left p-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:border-zinc-700" id="delete-role-display">Select role...</button>
+                        <button onclick="executeDeleteRole()" class="w-full bg-red-900/40 hover:bg-red-900/60 border border-red-900/60 text-red-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Delete Role</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- ================= TAB: PRESENCE ================= -->
+        <div id="tab-presence" class="tab-panel hidden space-y-8">
+            <section class="glass-panel p-6 rounded-2xl space-y-5">
+                <div class="border-b border-zinc-800/80 pb-4">
+                    <h2 class="font-bold text-base text-zinc-100 flex items-center gap-2">
+                        <i data-lucide="activity" class="w-4 h-4 text-zinc-400"></i> Presence & Activity Configurator
+                    </h2>
+                    <p class="text-xs text-zinc-400 mt-0.5">Set the bot's rich presence, status, and optional streaming URL.</p>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Activity Type</label>
+                        <select id="presence-type" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <option value="playing">Playing</option>
+                            <option value="listening">Listening to</option>
+                            <option value="watching">Watching</option>
+                            <option value="competing">Competing in</option>
+                            <option value="streaming">Streaming</option>
+                            <option value="custom">Custom Status</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Status</label>
+                        <select id="presence-status" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-zinc-600">
+                            <option value="online">🟢 Online</option>
+                            <option value="idle">🟡 Idle</option>
+                            <option value="dnd">🔴 Do Not Disturb</option>
+                            <option value="invisible">⚫ Invisible</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Status Text</label>
+                    <input type="text" id="presence-text" placeholder="e.g. Developing Apps" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-zinc-600">
+                </div>
+
+                <div id="stream-url-wrap" class="hidden">
+                    <label class="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Stream URL (Twitch/YouTube)</label>
+                    <input type="text" id="presence-url" placeholder="https://twitch.tv/..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-zinc-600">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="updatePresence()" class="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 hover:bg-zinc-300 font-bold py-2.5 rounded-xl text-xs smooth-transition shadow-md">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Update Status
+                    </button>
+                    <button onclick="resetPresence()" class="w-full flex items-center justify-center gap-2 bg-zinc-900 border border-zinc-800 text-zinc-200 hover:border-zinc-700 font-bold py-2.5 rounded-xl text-xs smooth-transition">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset
+                    </button>
+                </div>
+            </section>
+        </div>
+
+        <!-- ================= TAB: SYSTEM ================= -->
+        <div id="tab-system" class="tab-panel hidden space-y-8">
+            <section class="glass-panel p-6 rounded-2xl space-y-4">
+                <div class="border-b border-zinc-800/80 pb-4">
+                    <h2 class="font-bold text-base text-zinc-100 flex items-center gap-2">
+                        <i data-lucide="terminal" class="w-4 h-4 text-zinc-400"></i> Host Command Terminal
+                    </h2>
+                    <p class="text-xs text-zinc-400 mt-0.5">Run remote host shell commands. <span class="text-red-400">⚠ Use with caution.</span></p>
+                </div>
+
+                <div class="flex gap-2">
+                    <input type="text" id="terminal-cmd" placeholder="dir, systeminfo, echo..." class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs mono focus:outline-none focus:border-zinc-600">
+                    <button onclick="runCommand()" class="bg-zinc-100 text-zinc-950 hover:bg-zinc-300 font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 smooth-transition shrink-0">
+                        <i data-lucide="play" class="w-3.5 h-3.5"></i> Exec
+                    </button>
+                </div>
+                <pre id="terminal-output" class="w-full h-64 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-[11px] mono text-zinc-400 overflow-y-auto whitespace-pre-wrap">Ready for commands...</pre>
+
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="quickCommand('dir')" class="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[11px] mono text-zinc-300 hover:border-zinc-700">dir</button>
+                    <button onclick="quickCommand('systeminfo')" class="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[11px] mono text-zinc-300 hover:border-zinc-700">systeminfo</button>
+                    <button onclick="quickCommand('ipconfig')" class="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[11px] mono text-zinc-300 hover:border-zinc-700">ipconfig</button>
+                    <button onclick="quickCommand('tasklist')" class="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[11px] mono text-zinc-300 hover:border-zinc-700">tasklist</button>
+                </div>
+            </section>
+
+            <section class="glass-panel p-6 rounded-2xl space-y-4">
+                <div class="border-b border-zinc-800/80 pb-4">
+                    <h2 class="font-bold text-base text-zinc-100 flex items-center gap-2">
+                        <i data-lucide="settings-2" class="w-4 h-4 text-zinc-400"></i> Bot Configuration
+                    </h2>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="text-xs font-semibold text-zinc-200">Sync Slash Commands</div>
+                        <p class="text-[10px] text-zinc-500">Re-sync application commands to a guild.</p>
+                        <button onclick="syncCommands()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">Sync Commands</button>
+                    </div>
+                    <div class="p-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl space-y-3">
+                        <div class="text-xs font-semibold text-zinc-200">List All Commands</div>
+                        <p class="text-[10px] text-zinc-500">Fetch all registered application commands.</p>
+                        <button onclick="listCommands()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded-lg text-xs smooth-transition">List Commands</button>
+                    </div>
+                </div>
+                <pre id="config-output" class="w-full h-40 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-[11px] mono text-zinc-400 overflow-y-auto whitespace-pre-wrap">Output appears here...</pre>
+            </section>
+        </div>
+
+        <!-- ================= TAB: LOGS ================= -->
+        <div id="tab-logs" class="tab-panel hidden space-y-8">
+            <section class="glass-panel p-6 rounded-2xl space-y-4">
+                <div class="border-b border-zinc-800/80 pb-3 flex items-center justify-between">
+                    <h2 class="font-bold text-sm uppercase text-zinc-400 tracking-wider flex items-center gap-2">
+                        <i data-lucide="scroll-text" class="w-3.5 h-3.5"></i> Activity Log
+                    </h2>
+                    <div class="flex items-center gap-2">
+                        <button onclick="clearLog()" class="px-3 py-1.5 text-[11px] text-zinc-400 hover:text-zinc-100 smooth-transition">Clear</button>
+                        <button onclick="exportLog()" class="px-3 py-1.5 text-[11px] text-zinc-400 hover:text-zinc-100 smooth-transition flex items-center gap-1.5">
+                            <i data-lucide="download" class="w-3 h-3"></i> Export
+                        </button>
+                    </div>
+                </div>
+                <div id="activity-log" class="space-y-1.5 text-[11px] mono text-zinc-400 max-h-[600px] overflow-y-auto"></div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        // ============ STATE ============
+        let channelsData = [];
+        let guildsData = [];
+        let activeGuild = null;
+        let activeGuildChannels = [];
+        let activeGuildUsers = [];
+        let activeGuildRoles = [];
+
+        let selectedChannelIds = new Set();
+        let tempSelectedIds = new Set();
+        let tempServerId = null;
+
+        let selectedRoleId = null;
+        let selectedRoleTargetField = 'perm';
+
+        let autoRefresh = true;
+        let refreshInterval = null;
+        let activityLog = [];
+        let broadcastHistory = [];
+
+        lucide.createIcons();
+
+        // ============ TOAST & LOG ============
+        function showToast(message, type='info') {
+            const toast = document.getElementById('toast');
+            const msg = document.getElementById('toast-msg');
+            msg.innerText = message;
+            toast.classList.remove('hidden');
+            toast.classList.add('flex');
+            addLog(message, type);
+            setTimeout(() => {
+                toast.classList.add('hidden');
+                toast.classList.remove('flex');
+            }, 3500);
+        }
+
+        function addLog(msg, type='info') {
+            const time = new Date().toLocaleTimeString();
+            activityLog.unshift({ msg, time, type });
+            if (activityLog.length > 500) activityLog.pop();
+            renderLog();
+        }
+
+        function renderLog() {
+            const container = document.getElementById('activity-log');
+            if (!container) return;
+            container.innerHTML = '';
+            if (activityLog.length === 0) {
+                container.innerHTML = '<div class="text-zinc-600 italic">No activity yet.</div>';
+                return;
+            }
+            activityLog.forEach(item => {
+                const colorMap = {
+                    info: 'text-zinc-400',
+                    success: 'text-emerald-400',
+                    error: 'text-red-400',
+                    warn: 'text-amber-400'
+                };
+                const row = document.createElement('div');
+                row.className = 'flex items-start justify-between py-1.5 border-b border-zinc-800/40 gap-3';
+                row.innerHTML = `<span class="truncate ${colorMap[item.type] || 'text-zinc-400'}">${item.msg}</span><span class="text-[10px] text-zinc-600 shrink-0 mono">${item.time}</span>`;
+                container.appendChild(row);
+            });
+        }
+
+        function clearLog() { activityLog = []; renderLog(); showToast('Log cleared.'); }
+        function exportLog() {
+            const blob = new Blob([activityLog.map(l => `[${l.time}] ${l.msg}`).join('\n')], {type: 'text/plain'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'command-center-log.txt';
+            a.click();
+        }
+
+        // ============ TABS ============
+        function switchTab(name) {
+            document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
+            document.getElementById('tab-' + name).classList.remove('hidden');
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                if (el.dataset.tab === name) {
+                    el.classList.add('active', 'text-zinc-950', 'bg-zinc-100');
+                    el.classList.remove('text-zinc-400');
+                } else {
+                    el.classList.remove('active', 'text-zinc-950', 'bg-zinc-100');
+                    el.classList.add('text-zinc-400');
+                }
+            });
+            lucide.createIcons();
+        }
+
+        // ============ AUTO REFRESH ============
+        function toggleAutoRefresh() {
+            autoRefresh = !autoRefresh;
+            const btn = document.getElementById('autorefresh-btn');
+            if (autoRefresh) {
+                btn.classList.add('text-emerald-400');
+                startRefresh();
+                showToast('Auto refresh enabled.');
+            } else {
+                btn.classList.remove('text-emerald-400');
+                if (refreshInterval) clearInterval(refreshInterval);
+                showToast('Auto refresh disabled.');
+            }
+        }
+        function startRefresh() {
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshInterval = setInterval(fetchStats, 3000);
+        }
+
+        // ============ STATS ============
+        async function fetchStats() {
+            if (!autoRefresh) return;
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                document.getElementById('cpu-val').innerText = `${data.cpu}%`;
+                document.getElementById('ram-val').innerText = `${data.ram}%`;
+                document.getElementById('cpu-bar').style.width = `${data.cpu}%`;
+                document.getElementById('ram-bar').style.width = `${data.ram}%`;
+                document.getElementById('guild-val').innerText = data.guilds;
+                document.getElementById('ping-val').innerText = `${data.ping} ms`;
+                document.getElementById('latency-display').innerText = `${data.ping} ms`;
+                document.getElementById('bot-username').innerText = data.user || 'Connected';
+                document.getElementById('cpu-cores').innerText = `${data.cpu_cores} cores`;
+                document.getElementById('ram-detail').innerText = `${data.ram_used_gb} / ${data.ram_total_gb} GB`;
+                document.getElementById('member-total').innerText = `${data.member_total.toLocaleString()} members total`;
+                document.getElementById('uptime-display').innerText = `Uptime: ${data.uptime}`;
+                document.getElementById('os-info').innerText = `${data.os} | ${data.hostname}`;
+                document.getElementById('proc-info').innerText = `PID ${data.pid} | ${data.proc_mem_mb} MB | ${data.proc_cpu}% CPU`;
+                document.getElementById('net-info').innerText = `↑ ${data.net_sent_mb} MB | ↓ ${data.net_recv_mb} MB`;
+            } catch (e) {}
+        }
+
+        // ============ SERVER MODAL ============
+        function openServerModal() {
+            tempServerId = activeGuild?.guild_id || null;
+            renderServerList();
+            const modal = document.getElementById('server-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0', 'pointer-events-none');
+                document.getElementById('server-search').focus();
+            }, 10);
+        }
+
+        function closeServerModal() {
+            const modal = document.getElementById('server-modal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => { modal.classList.add('hidden'); modal.classList.remove('flex'); }, 200);
+        }
+
+        function renderServerList() {
+            const container = document.getElementById('server-list');
+            container.innerHTML = '';
+            const q = (document.getElementById('server-search')?.value || '').toLowerCase();
+
+            const filtered = guildsData.filter(g =>
+                g.guild_name.toLowerCase().includes(q) || g.guild_id.includes(q)
+            );
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="col-span-2 text-center text-zinc-500 italic text-xs py-8">No servers found.</div>';
+                updateServerApplyButton();
+                return;
+            }
+
+            filtered.forEach(g => {
+                const isSelected = tempServerId === g.guild_id;
+                const card = document.createElement('button');
+                card.className = `server-card text-left p-4 rounded-xl border ${isSelected ? 'selected border-zinc-400' : 'border-zinc-800 bg-zinc-950/60 hover:border-zinc-700'} smooth-transition`;
+                card.onclick = () => {
+                    tempServerId = g.guild_id;
+                    renderServerList();
+                };
+
+                const initials = g.guild_name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+
+                card.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <div class="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 overflow-hidden ${
+                            isSelected ? 'bg-zinc-100 text-zinc-950' : 'bg-zinc-800 text-zinc-300'
+                        }">
+                            ${g.icon ? `<img src="${g.icon}" class="w-full h-full object-cover">` : initials}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <div class="font-bold text-sm text-zinc-100 truncate">${g.guild_name}</div>
+                                ${isSelected ? '<i data-lucide="check-circle-2" class="w-4 h-4 text-zinc-100 shrink-0"></i>' : ''}
+                            </div>
+                            <div class="text-[10px] text-zinc-500 mono truncate mt-0.5">${g.guild_id}</div>
+                            <div class="flex items-center gap-3 mt-2 text-[10px] text-zinc-400">
+                                <span class="flex items-center gap-1"><i data-lucide="users" class="w-3 h-3"></i> ${g.member_count ?? '?'}</span>
+                                <span class="flex items-center gap-1"><i data-lucide="hash" class="w-3 h-3"></i> ${g.channel_count ?? '?'}</span>
+                                <span class="flex items-center gap-1"><i data-lucide="shield" class="w-3 h-3"></i> ${g.role_count ?? '?'}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+            lucide.createIcons();
+            updateServerApplyButton();
+        }
+
+        function updateServerApplyButton() {
+            const btn = document.getElementById('server-apply-btn');
+            const countEl = document.getElementById('server-selection-count');
+            if (tempServerId) {
+                const g = guildsData.find(x => x.guild_id === tempServerId);
+                countEl.innerText = g ? `Selected: ${g.guild_name}` : '1 server selected';
+                btn.disabled = false;
+            } else {
+                countEl.innerText = 'No server selected';
+                btn.disabled = true;
+            }
+        }
+
+        function applyServerSelection() {
+            if (!tempServerId) return;
+            const g = guildsData.find(x => x.guild_id === tempServerId);
+            if (!g) return;
+
+            if (activeGuild && activeGuild.guild_id !== tempServerId) {
+                selectedChannelIds.clear();
+                updateSelectedTags();
+                updateModCount();
+            }
+
+            activeGuild = g;
+            activeGuildChannels = channelsData.find(x => x.guild_id === g.guild_id)?.channels || [];
+
+            updateActiveServerUI();
+            closeServerModal();
+            showToast(`Now managing: ${g.guild_name}`, 'success');
+            addLog(`Switched active server to ${g.guild_name} (${g.guild_id})`, 'info');
+
+            loadUsersForGuild();
+            loadRolesForGuild();
+        }
+
+        function updateActiveServerUI() {
+            const overlay = document.getElementById('no-server-overlay');
+            if (!activeGuild) {
+                overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
+                return;
+            }
+            overlay.classList.add('hidden');
+            overlay.classList.remove('flex');
+
+            document.getElementById('active-server-name').innerText = activeGuild.guild_name;
+            document.getElementById('ov-server-name').innerText = activeGuild.guild_name;
+            document.getElementById('ov-server-id').innerText = activeGuild.guild_id;
+            document.getElementById('ov-member-count').innerText = activeGuild.member_count ?? '—';
+            document.getElementById('ov-channel-count').innerText = activeGuild.channel_count ?? '—';
+            document.getElementById('ov-role-count').innerText = activeGuild.role_count ?? '—';
+            document.getElementById('broadcast-guild-label').innerText = activeGuild.guild_name;
+            document.getElementById('mod-guild-label').innerText = activeGuild.guild_name;
+            document.getElementById('members-guild-label').innerText = activeGuild.guild_name;
+        }
+
+        // ============ LOAD GUILDS + CHANNELS ============
+        async function loadChannelsData() {
+            try {
+                const res = await fetch('/api/channels');
+                channelsData = await res.json();
+                guildsData = channelsData.map(g => ({
+                    guild_id: g.guild_id,
+                    guild_name: g.guild_name,
+                    icon: g.icon || '',
+                    member_count: g.member_count ?? null,
+                    channel_count: g.channels.length,
+                    role_count: g.role_count ?? null,
+                }));
+            } catch (e) {}
+        }
+
+        // ============ CHANNEL MODAL ============
+        function openChannelModal() {
+            if (!activeGuild) {
+                showToast('Select a server first — press G.', 'warn');
+                return;
+            }
+            tempSelectedIds = new Set(selectedChannelIds);
+            document.getElementById('channel-modal-guild').innerText = activeGuild.guild_name;
+            renderModalChannels();
+
+            const modal = document.getElementById('channel-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => modal.classList.remove('opacity-0', 'pointer-events-none'), 10);
+        }
+
+        function closeChannelModal() {
+            const modal = document.getElementById('channel-modal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => { modal.classList.add('hidden'); modal.classList.remove('flex'); }, 200);
+        }
+
+        function clearModalSelection() {
+            tempSelectedIds.clear();
+            renderModalChannels();
+        }
+
+        function selectAllChannels() {
+            if (!activeGuild) return;
+            const g = channelsData.find(x => x.guild_id === activeGuild.guild_id);
+            if (!g) return;
+            const q = document.getElementById('modal-search').value.toLowerCase();
+            const showText = document.getElementById('modal-filter-text').checked;
+            const showAnn = document.getElementById('modal-filter-announcement').checked;
+            const showVoice = document.getElementById('modal-filter-voice').checked;
+            g.channels.forEach(ch => {
+                if (!ch.name.toLowerCase().includes(q)) return;
+                if (ch.type === 'text' && !showText) return;
+                if (ch.type === 'announcement' && !showAnn) return;
+                if (ch.type === 'voice' && !showVoice) return;
+                tempSelectedIds.add(ch.id);
+            });
+            renderModalChannels();
+        }
+
+        function renderModalChannels() {
+            const container = document.getElementById('modal-channels-list');
+            container.innerHTML = '';
+            if (!activeGuild) {
+                container.innerHTML = '<div class="text-zinc-600 italic text-xs">Select a server first (press G).</div>';
+                return;
+            }
+            const guild = channelsData.find(g => g.guild_id === activeGuild.guild_id);
+            if (!guild) {
+                container.innerHTML = '<div class="text-zinc-600 italic text-xs">No channels available.</div>';
+                return;
+            }
+
+            const query = document.getElementById('modal-search').value.toLowerCase();
+            const showText = document.getElementById('modal-filter-text').checked;
+            const showAnn = document.getElementById('modal-filter-announcement').checked;
+            const showVoice = document.getElementById('modal-filter-voice').checked;
+
+            const filtered = guild.channels.filter(ch => {
+                if (!ch.name.toLowerCase().includes(query)) return false;
+                if (ch.type === 'text' && !showText) return false;
+                if (ch.type === 'announcement' && !showAnn) return false;
+                if (ch.type === 'voice' && !showVoice) return false;
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="text-zinc-600 italic text-xs">No channels match.</div>';
+                return;
+            }
+
+            const grid = document.createElement('div');
+            grid.className = 'space-y-1';
+
+            filtered.forEach(ch => {
+                const isSelected = tempSelectedIds.has(ch.id);
+                const btn = document.createElement('button');
+                btn.className = `w-full flex items-center justify-between p-2.5 rounded-xl border text-xs smooth-transition ${
+                    isSelected
+                        ? 'bg-zinc-100 text-zinc-950 border-zinc-100 font-bold'
+                        : 'bg-zinc-950/80 border-zinc-800 text-zinc-300 hover:border-zinc-700'
+                }`;
+                btn.onclick = (e) => handleChannelClick(e, ch.id);
+                const iconMap = { text: 'hash', announcement: 'megaphone', voice: 'volume-2' };
+                btn.innerHTML = `
+                    <span class="flex items-center gap-2 truncate">
+                        <i data-lucide="${iconMap[ch.type] || 'hash'}" class="w-3.5 h-3.5 shrink-0"></i>
+                        <span class="truncate">${ch.name}</span>
+                    </span>
+                    ${isSelected ? '<i data-lucide="check" class="w-3.5 h-3.5 shrink-0"></i>' : ''}
+                `;
+                grid.appendChild(btn);
+            });
+
+            container.appendChild(grid);
+            document.getElementById('modal-selection-count').innerText = `${tempSelectedIds.size} channel(s) selected`;
+            lucide.createIcons();
+        }
+
+        function handleChannelClick(e, id) {
+            if (e.ctrlKey || e.metaKey) {
+                if (tempSelectedIds.has(id)) tempSelectedIds.delete(id);
+                else tempSelectedIds.add(id);
+            } else {
+                tempSelectedIds.clear();
+                tempSelectedIds.add(id);
+            }
+            renderModalChannels();
+        }
+
+        function applyChannelSelection() {
+            selectedChannelIds = new Set(tempSelectedIds);
+            updateSelectedTags();
+            updateModCount();
+            closeChannelModal();
+            showToast(`${selectedChannelIds.size} channel(s) selected.`, 'success');
+        }
+
+        function removeChannelSelection(id) {
+            selectedChannelIds.delete(id);
+            updateSelectedTags();
+            updateModCount();
+        }
+
+        function updateModCount() {
+            document.getElementById('mod-channel-count').innerText = selectedChannelIds.size;
+        }
+
+        function updateSelectedTags() {
+            const tagsContainer = document.getElementById('selected-tags');
+            const inputField = document.getElementById('dispatch-channel-input');
+            tagsContainer.innerHTML = '';
+            if (selectedChannelIds.size === 0) { inputField.value = ''; return; }
+            inputField.value = `${selectedChannelIds.size} channel(s) selected`;
+
+            let allChannelsMap = {};
+            if (activeGuild) {
+                const g = channelsData.find(x => x.guild_id === activeGuild.guild_id);
+                if (g) g.channels.forEach(c => allChannelsMap[c.id] = c);
+            }
+
+            selectedChannelIds.forEach(id => {
+                const ch = allChannelsMap[id];
+                const tag = document.createElement('span');
+                tag.className = 'inline-flex items-center gap-1.5 px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-200';
+                tag.innerHTML = `
+                    <i data-lucide="hash" class="w-3 h-3 text-zinc-400"></i>
+                    <span>${ch ? ch.name : id}</span>
+                    <button onclick="removeChannelSelection('${id}')" class="hover:text-zinc-100 text-zinc-400 ml-1">
+                        <i data-lucide="x" class="w-3 h-3"></i>
+                    </button>
+                `;
+                tagsContainer.appendChild(tag);
+            });
+            lucide.createIcons();
+        }
+
+        // ============ ROLE MODAL ============
+        function openRoleModal(targetField = 'perm') {
+            if (!activeGuild) return showToast('Select a server first — press G.', 'warn');
+            selectedRoleTargetField = targetField;
+            const modal = document.getElementById('role-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => modal.classList.remove('opacity-0', 'pointer-events-none'), 10);
+            renderRoleList();
+        }
+        function closeRoleModal() {
+            const modal = document.getElementById('role-modal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => { modal.classList.add('hidden'); modal.classList.remove('flex'); }, 200);
+        }
+        function renderRoleList() {
+            const container = document.getElementById('role-list');
+            const q = document.getElementById('role-search').value.toLowerCase();
+            container.innerHTML = '';
+            const filtered = activeGuildRoles.filter(r => r.name.toLowerCase().includes(q));
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="text-zinc-600 italic text-xs p-2">No roles loaded.</div>';
+                return;
+            }
+            filtered.forEach(r => {
+                const btn = document.createElement('button');
+                btn.className = 'w-full flex items-center gap-3 p-2.5 rounded-xl text-xs text-zinc-300 hover:bg-zinc-900 smooth-transition';
+                btn.onclick = () => {
+                    selectedRoleId = r.id;
+                    const display = `${r.name} (${r.id})`;
+                    if (selectedRoleTargetField === 'perm') document.getElementById('perm-target-display').innerText = display;
+                    if (selectedRoleTargetField === 'assign') document.getElementById('assign-role-display').innerText = display;
+                    if (selectedRoleTargetField === 'delete') document.getElementById('delete-role-display').innerText = display;
+                    closeRoleModal();
+                    showToast(`Role selected: ${r.name}`, 'success');
+                };
+                btn.innerHTML = `
+                    <span class="w-3.5 h-3.5 rounded-full shrink-0" style="background:${r.color}"></span>
+                    <div class="text-left flex-1">
+                        <div class="font-medium text-zinc-200">${r.name}</div>
+                        <div class="text-[10px] text-zinc-500 mono">${r.id}</div>
+                    </div>
+                `;
+                container.appendChild(btn);
+            });
+            lucide.createIcons();
+        }
+        function clearPermTarget() { selectedRoleId = null; document.getElementById('perm-target-display').innerText = 'Select role...'; }
+
+        // ============ LOAD USERS/ROLES ============
+        async function loadUsersForGuild() {
+            if (!activeGuild) return;
+            try {
+                const res = await fetch(`/api/guild/${activeGuild.guild_id}/users`);
+                activeGuildUsers = await res.json();
+            } catch (e) {}
+        }
+        async function loadRolesForGuild() {
+            if (!activeGuild) return;
+            try {
+                const res = await fetch(`/api/guild/${activeGuild.guild_id}/roles`);
+                activeGuildRoles = await res.json();
+            } catch (e) {}
+        }
+
+        // ============ BROADCAST ============
+        const templates = {
+            announcement: { title: '📢 Announcement', body: 'Hello everyone!\n\nWe have an important announcement to share with you.', color: '#5865F2' },
+            update: { title: '🔧 Update Notice', body: 'A new update has been deployed.\n\n**Changes:**\n- ...', color: '#10B981' },
+            event: { title: '🎉 Event', body: 'Join us for a special event!\n\n**When:** ...\n**Where:** ...', color: '#F59E0B' },
+            warning: { title: '⚠️ Warning', body: 'Please be advised: ...', color: '#EF4444' }
+        };
+        function loadTemplate(name) {
+            const t = templates[name];
+            if (!t) return;
+            document.getElementById('embed-toggle').checked = true;
+            toggleEmbedFields();
+            document.getElementById('embed-title').value = t.title;
+            document.getElementById('embed-color').value = t.color;
+            document.getElementById('embed-color-picker').value = t.color;
+            document.getElementById('dispatch-content').value = t.body;
+            updateCharCount();
+            showToast(`Template loaded: ${name}`, 'success');
+        }
+        function updateCharCount() {
+            const v = document.getElementById('dispatch-content').value.length;
+            document.getElementById('char-count').innerText = v;
+        }
+        document.getElementById('dispatch-content')?.addEventListener('input', updateCharCount);
+        document.getElementById('embed-color-picker')?.addEventListener('input', (e) => {
+            document.getElementById('embed-color').value = e.target.value;
+        });
+        document.getElementById('embed-color')?.addEventListener('input', (e) => {
+            if (/^#[0-9a-f]{6}$/i.test(e.target.value)) document.getElementById('embed-color-picker').value = e.target.value;
+        });
+        document.getElementById('presence-type')?.addEventListener('change', (e) => {
+            document.getElementById('stream-url-wrap').classList.toggle('hidden', e.target.value !== 'streaming');
+        });
+
+        function toggleEmbedFields() {
+            const checked = document.getElementById('embed-toggle').checked;
+            document.getElementById('embed-fields').classList.toggle('hidden', !checked);
+        }
+
+        function getEmbedPayload() {
+            return {
+                is_embed: document.getElementById('embed-toggle').checked,
+                embed_title: document.getElementById('embed-title').value,
+                embed_color: document.getElementById('embed-color').value,
+                embed_author: document.getElementById('embed-author').value,
+                embed_thumbnail: document.getElementById('embed-thumbnail').value,
+                embed_image: document.getElementById('embed-image').value,
+                embed_footer: document.getElementById('embed-footer').value,
+                embed_timestamp: document.getElementById('embed-timestamp').checked
+            };
+        }
+
+        async function sendDispatch() {
+            if (!activeGuild) return showToast('Select a server first — press G.', 'warn');
+            const channel_ids = Array.from(selectedChannelIds);
+            const content = document.getElementById('dispatch-content').value;
+            if (channel_ids.length === 0 || !content) return showToast('Select channel(s) and enter content.', 'warn');
+
+            let finalContent = content;
+            if (document.getElementById('opt-silent').checked) finalContent = '@silent ' + finalContent;
+
+            const payload = {
+                channel_ids, content: finalContent,
+                tts: document.getElementById('opt-tts').checked,
+                delete_after: document.getElementById('opt-delay').checked ? 10 : null,
+                channel_delay: parseInt(document.getElementById('opt-channel-delay').value || 0),
+                ...getEmbedPayload()
+            };
+
+            const res = await fetch('/api/dispatch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+            if (data.status === 'success') {
+                broadcastHistory.unshift({
+                    content: content.substring(0, 60),
+                    channels: channel_ids.length,
+                    time: new Date().toLocaleTimeString(),
+                    guild: activeGuild.guild_name
+                });
+                if (broadcastHistory.length > 20) broadcastHistory.pop();
+                renderBroadcastHistory();
+            }
+        }
+
+        function renderBroadcastHistory() {
+            const c = document.getElementById('broadcast-history');
+            if (broadcastHistory.length === 0) {
+                c.innerHTML = '<div class="text-zinc-600 italic">No broadcasts yet.</div>';
+                return;
+            }
+            c.innerHTML = broadcastHistory.map(b => `
+                <div class="p-2.5 bg-zinc-950/60 border border-zinc-800 rounded-lg">
+                    <div class="text-zinc-300 truncate">${b.content}</div>
+                    <div class="text-[10px] text-zinc-500 mono mt-1">${b.guild} • ${b.channels} channels • ${b.time}</div>
+                </div>
+            `).join('');
+        }
+
+        function previewMessage() {
+            const title = document.getElementById('embed-title').value;
+            const content = document.getElementById('dispatch-content').value;
+            const color = document.getElementById('embed-color').value;
+            const isEmbed = document.getElementById('embed-toggle').checked;
+            let preview = '';
+            if (isEmbed) {
+                preview = `[EMBED]\nTitle: ${title || '(none)'}\nColor: ${color}\n\n${content}`;
+            } else {
+                preview = `[MESSAGE]\n\n${content}`;
+            }
+            alert(preview);
+        }
+
+        // ============ MODERATION ============
+        async function postJSON(url, body) {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            return await res.json();
+        }
+        function requireChannels() {
+            if (!activeGuild) { showToast('Select a server first — press G.', 'warn'); return false; }
+            if (selectedChannelIds.size === 0) { showToast('Select channel(s) first.', 'warn'); return false; }
+            return true;
+        }
+
+        async function executePurge() {
+            if (!requireChannels()) return;
+            const amount = parseInt(document.getElementById('purge-amount').value);
+            if (!amount) return showToast('Enter purge amount.', 'warn');
+            const data = await postJSON('/api/purge', {
+                channel_ids: Array.from(selectedChannelIds),
+                amount,
+                bots_only: document.getElementById('purge-bots-only').checked
+            });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        async function executeSlowmode() {
+            if (!requireChannels()) return;
+            const seconds = parseInt(document.getElementById('slowmode-seconds').value);
+            const data = await postJSON('/api/slowmode', { channel_ids: Array.from(selectedChannelIds), seconds: seconds || 0 });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        async function executeLockdown() {
+            if (!requireChannels()) return;
+            const data = await postJSON('/api/lockdown', { channel_ids: Array.from(selectedChannelIds) });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        async function executeRename() {
+            if (!requireChannels()) return;
+            const name = document.getElementById('rename-text').value;
+            if (!name) return showToast('Enter new name.', 'warn');
+            const data = await postJSON('/api/rename', { channel_ids: Array.from(selectedChannelIds), name });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        async function executeTopic() {
+            if (!requireChannels()) return;
+            const topic = document.getElementById('topic-text').value;
+            const data = await postJSON('/api/topic', { channel_ids: Array.from(selectedChannelIds), topic });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        async function executeNsfw() {
+            if (!requireChannels()) return;
+            const state = document.getElementById('nsfw-state').value === 'on';
+            const data = await postJSON('/api/nsfw', { channel_ids: Array.from(selectedChannelIds), state });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        async function executeArchive() {
+            if (!requireChannels()) return;
+            const archive = document.getElementById('archive-state').value === 'archive';
+            const data = await postJSON('/api/archive', { channel_ids: Array.from(selectedChannelIds), archive });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        async function executeClone() {
+            if (!requireChannels()) return;
+            const data = await postJSON('/api/clone', { channel_ids: Array.from(selectedChannelIds) });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        async function executeDelete() {
+            if (!requireChannels()) return;
+            if (!document.getElementById('delete-confirm').checked) return showToast('Confirm the deletion first.', 'warn');
+            const data = await postJSON('/api/delete', { channel_ids: Array.from(selectedChannelIds) });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        async function executePermOverwrite() {
+            if (!requireChannels()) return;
+            if (!selectedRoleId) return showToast('Select a role first.', 'warn');
+            const data = await postJSON('/api/permissions', {
+                channel_ids: Array.from(selectedChannelIds),
+                role_id: selectedRoleId,
+                permission: document.getElementById('perm-name').value,
+                state: document.getElementById('perm-state').value
+            });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        // ============ MEMBERS ============
+        async function executeBan() {
+            if (!activeGuild) return showToast('Select a server first.', 'warn');
+            const data = await postJSON('/api/member/ban', {
+                guild_id: activeGuild.guild_id,
+                user_id: document.getElementById('ban-user-id').value,
+                reason: document.getElementById('ban-reason').value,
+                delete_days: document.getElementById('ban-delete-days').checked ? 1 : 0
+            });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+        async function executeKick() {
+            if (!activeGuild) return showToast('Select a server first.', 'warn');
+            const data = await postJSON('/api/member/kick', {
+                guild_id: activeGuild.guild_id,
+                user_id: document.getElementById('kick-user-id').value,
+                reason: document.getElementById('kick-reason').value
+            });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+        async function executeTimeout() {
+            if (!activeGuild) return showToast('Select a server first.', 'warn');
+            const data = await postJSON('/api/member/timeout', {
+                guild_id: activeGuild.guild_id,
+                user_id: document.getElementById('timeout-user-id').value,
+                seconds: parseInt(document.getElementById('timeout-duration').value)
+            });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+        async function executeDm() {
+            const data = await postJSON('/api/member/dm', {
+                user_id: document.getElementById('dm-user-id').value,
+                content: document.getElementById('dm-content').value
+            });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        // ============ ROLES ============
+        async function executeCreateRole() {
+            if (!activeGuild) return showToast('Select a server first.', 'warn');
+            const data = await postJSON('/api/role/create', {
+                guild_id: activeGuild.guild_id,
+                name: document.getElementById('role-new-name').value,
+                color: document.getElementById('role-new-color').value,
+                hoist: document.getElementById('role-new-hoist').checked,
+                mentionable: document.getElementById('role-new-mentionable').checked
+            });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+        async function executeAssignRole() {
+            if (!activeGuild || !selectedRoleId) return showToast('Select server and role.', 'warn');
+            const data = await postJSON('/api/role/assign', {
+                guild_id: activeGuild.guild_id,
+                role_id: selectedRoleId,
+                user_id: document.getElementById('assign-user-id').value,
+                action: document.getElementById('assign-action').value
+            });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+        async function executeDeleteRole() {
+            if (!activeGuild || !selectedRoleId) return showToast('Select server and role.', 'warn');
+            if (!confirm('Delete this role?')) return;
+            const data = await postJSON('/api/role/delete', { guild_id: activeGuild.guild_id, role_id: selectedRoleId });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+
+        // ============ PRESENCE ============
+        async function updatePresence() {
+            const type = document.getElementById('presence-type').value;
+            const activity = document.getElementById('presence-text').value;
+            const status = document.getElementById('presence-status').value;
+            const url = document.getElementById('presence-url').value;
+            if (!activity && type !== 'custom') return showToast('Provide status text.', 'warn');
+            const data = await postJSON('/api/presence', { type, activity, status, url });
+            showToast(data.message, data.status === 'success' ? 'success' : 'error');
+        }
+        async function resetPresence() {
+            const data = await postJSON('/api/presence', { type: 'playing', activity: '', status: 'online', reset: true });
+            showToast(data.message, 'success');
+        }
+
+        // ============ SYSTEM ============
+        async function runCommand() {
+            const command = document.getElementById('terminal-cmd').value;
+            if (!command) return;
+            const outputEl = document.getElementById('terminal-output');
+            outputEl.innerText = 'Executing...';
+            const data = await postJSON('/api/exec', { command });
+            outputEl.innerText = data.output;
+        }
+        function quickCommand(cmd) {
+            document.getElementById('terminal-cmd').value = cmd;
+            runCommand();
+        }
+        async function syncCommands() {
+            const data = await postJSON('/api/sync', {});
+            document.getElementById('config-output').innerText = data.output;
+            showToast(data.message, 'success');
+        }
+        async function listCommands() {
+            const res = await fetch('/api/commands');
+            const data = await res.json();
+            document.getElementById('config-output').innerText = JSON.stringify(data, null, 2);
+        }
+
+        // ============ GLOBAL KEYBOARD ============
+        document.addEventListener('keydown', (e) => {
+            const tag = (e.target.tagName || '').toLowerCase();
+            const isTyping = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+
+            if (e.key === 'Escape') {
+                if (!document.getElementById('server-modal').classList.contains('hidden')) closeServerModal();
+                if (!document.getElementById('channel-modal').classList.contains('hidden')) closeChannelModal();
+                if (!document.getElementById('role-modal').classList.contains('hidden')) closeRoleModal();
+                return;
+            }
+
+            if (!isTyping && (e.key === 'g' || e.key === 'G') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                e.preventDefault();
+                openServerModal();
+            }
+        });
+
+        // ============ INIT ============
+        (async () => {
+            await loadChannelsData();
+            fetchStats();
+            startRefresh();
+            renderLog();
+            updateActiveServerUI();
+            showToast('Press G to select a server.', 'info');
+        })();
+    </script>
+</body>
+</html>
