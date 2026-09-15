@@ -45,6 +45,7 @@ tickets.json
 verification_config.json
 verification_logs.json
 watchlist.json
+github.py
 
 .vscode/
 .idea/
