@@ -4,3 +4,10 @@ __pycache__/
 deleted_logs/
 message_logs/
 *.json
+
+.venv/
+venv/
+
+.env.*
+!.env.example
+node_modules/

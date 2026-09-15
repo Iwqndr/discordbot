@@ -1,0 +1,2670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Command List</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Fredoka:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4efe6; --bg-dot: #d9d2c4; --card: #fdfbf6; --border: #c9c0ad;
+    --border-soft: #e5ddcc; --text: #3a342a; --muted: #7a7161;
+    --accent: #6ea8c9; --accent-dark: #4a7f9e; --accent-soft: #cde4f0;
+    --code-bg: #2b2620; --code-text: #f4efe6; --kbd-bg: #efe8da; --kbd-border: #c9c0ad;
+  }
+  [data-theme="dark"] {
+    --bg: #1a1815; --bg-dot: #2a2622; --card: #232019; --border: #3d3830;
+    --border-soft: #302b25; --text: #f0ebe0; --muted: #9a9284;
+    --accent: #7bb8d9; --accent-dark: #a8d4ec; --accent-soft: #2c4354;
+    --code-bg: #14120f; --code-text: #f0ebe0; --kbd-bg: #2a2620; --kbd-border: #4a443a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  html, body {
+    background-color: var(--bg);
+    background-image: radial-gradient(var(--bg-dot) 1px, transparent 1px);
+    background-size: 14px 14px;
+    color: var(--text);
+    font-family: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    min-height: 100vh; line-height: 1.55; -webkit-font-smoothing: antialiased;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 22px 100px; }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-bottom: 32px; animation: fadeUp 0.5s ease both;
+  }
+  .brand {
+    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 15px;
+    color: var(--muted); letter-spacing: 0.02em;
+  }
+  .brand .dot-brand {
+    display: inline-block; width: 8px; height: 8px; background: var(--accent-dark);
+    border-radius: 50%; margin-right: 8px; vertical-align: middle;
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+  }
+  .topbar-actions { display: flex; gap: 8px; }
+  .icon-btn {
+    width: 38px; height: 38px; border-radius: 12px;
+    background: var(--card); border: 2px solid var(--border); color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: transform 0.2s ease, border-color 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .icon-btn:hover { transform: translateY(-2px); border-color: var(--accent-dark); }
+  .icon-btn.active { border-color: var(--accent-dark); background: var(--accent-soft); }
+  .icon-btn svg { width: 18px; height: 18px; }
+  header { text-align: center; margin-bottom: 32px; animation: fadeUp 0.6s ease both; }
+  h1 {
+    font-family: "Fredoka", sans-serif; font-weight: 600;
+    font-size: clamp(38px, 7vw, 62px); color: var(--text);
+    letter-spacing: -0.01em; margin-bottom: 10px; line-height: 1;
+  }
+  h1 .accent { color: var(--accent-dark); }
+  .subtitle { color: var(--muted); font-size: 16px; font-weight: 600; }
+  .stats {
+    display: flex; justify-content: center; gap: 24px; margin: 22px 0 30px;
+    flex-wrap: wrap; animation: fadeUp 0.6s ease 0.1s both;
+  }
+  .stat { text-align: center; min-width: 80px; }
+  .stat-num {
+    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 24px;
+    color: var(--accent-dark); line-height: 1; font-variant-numeric: tabular-nums;
+  }
+  .stat-num small { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .stat-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin-top: 4px;
+  }
+  .controls { position: sticky; top: 12px; z-index: 20; margin-bottom: 18px; animation: fadeUp 0.6s ease 0.15s both; }
+  .search-wrap {
+    position: relative; background: var(--card); border: 2px solid var(--border);
+    border-radius: 16px; padding: 0 14px 0 44px;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+  .search-wrap.focused { border-color: var(--accent-dark); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .search-icon {
+    position: absolute; left: 15px; top: 50%; transform: translateY(-50%);
+    width: 18px; height: 18px; color: var(--muted); pointer-events: none;
+    transition: color 0.2s ease;
+  }
+  .search-wrap.focused .search-icon { color: var(--accent-dark); }
+  #searchInput {
+    width: 100%; padding: 14px 0; font-family: inherit; font-size: 15px;
+    font-weight: 600; color: var(--text); background: transparent;
+    border: none; outline: none;
+  }
+  #searchInput::placeholder { color: var(--muted); font-weight: 500; opacity: 0.7; }
+  .search-clear {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    width: 26px; height: 26px; border-radius: 50%; background: var(--bg);
+    border: 1.5px solid var(--border-soft); color: var(--muted);
+    display: none; align-items: center; justify-content: center;
+    cursor: pointer; transition: transform 0.15s ease, color 0.15s ease;
+  }
+  .search-clear.visible { display: flex; }
+  .search-clear:hover { transform: translateY(-50%) scale(1.1); color: var(--accent-dark); }
+  .search-clear svg { width: 12px; height: 12px; }
+  .kbd-hint {
+    position: absolute; right: 46px; top: 50%; transform: translateY(-50%);
+    font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 600;
+    color: var(--muted); background: var(--kbd-bg); border: 1.5px solid var(--kbd-border);
+    border-radius: 6px; padding: 2px 7px; pointer-events: none; opacity: 0.85;
+    transition: opacity 0.2s ease;
+  }
+  .search-wrap.focused .kbd-hint,
+  #searchInput:not(:placeholder-shown) ~ .kbd-hint { opacity: 0; }
+  .filters { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+  .filter-chip {
+    font-family: inherit; font-size: 12.5px; font-weight: 700;
+    padding: 6px 12px; border-radius: 999px; background: var(--card);
+    border: 1.5px solid var(--border); color: var(--muted); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: all 0.2s ease; -webkit-tap-highlight-color: transparent; user-select: none;
+  }
+  .filter-chip:hover { transform: translateY(-1px); color: var(--text); }
+  .filter-chip.active {
+    background: var(--chip-color-soft, var(--accent-soft));
+    border-color: var(--chip-color, var(--accent-dark));
+    color: color-mix(in srgb, var(--chip-color, var(--accent-dark)) 80%, #000 20%);
+  }
+  [data-theme="dark"] .filter-chip.active {
+    color: color-mix(in srgb, var(--chip-color, var(--accent)) 60%, #fff 40%);
+  }
+  .filter-chip .chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chip-color, var(--muted)); }
+  .filter-chip .chip-count { font-size: 10.5px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+  .sort-toggle {
+    margin-left: auto; font-family: inherit; font-size: 12px; font-weight: 700;
+    padding: 6px 12px; border-radius: 999px; background: var(--card);
+    border: 1.5px solid var(--border); color: var(--muted); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s ease;
+  }
+  .sort-toggle:hover { color: var(--text); transform: translateY(-1px); }
+  .results-meta {
+    font-size: 13px; color: var(--muted); font-weight: 600;
+    margin-bottom: 14px; min-height: 20px; padding: 0 4px;
+    transition: opacity 0.2s ease;
+  }
+  .results-meta.hidden { opacity: 0; }
+  .results-meta strong { color: var(--accent-dark); }
+  .results-meta .clear-search { color: var(--accent-dark); text-decoration: underline; cursor: pointer; margin-left: 6px; }
+  .roles { display: flex; flex-direction: column; gap: 16px; }
+  .role {
+    background: var(--card); border: 2px solid var(--border); border-radius: 20px;
+    overflow: hidden;
+    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+    animation: fadeUp 0.55s ease both; animation-delay: calc(var(--i) * 40ms);
+  }
+  .role:hover { transform: translateY(-2px); box-shadow: 0 6px 0 rgba(0,0,0,0.06); }
+  .role.open {
+    border-color: color-mix(in srgb, var(--role-color) 55%, var(--border));
+    box-shadow: 0 6px 0 rgba(0,0,0,0.06);
+  }
+  .role.hidden { display: none; }
+  .role-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 18px 22px; cursor: pointer; user-select: none;
+    -webkit-tap-highlight-color: transparent; transition: background 0.22s ease;
+  }
+  .role.open .role-header { background: color-mix(in srgb, var(--role-color-soft) 45%, transparent); }
+  .role-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .badge {
+    width: 38px; height: 38px; border-radius: 12px;
+    background: var(--role-color-soft);
+    border: 2px solid color-mix(in srgb, var(--role-color) 55%, var(--border));
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    font-family: "Fredoka", sans-serif; font-weight: 600;
+    color: color-mix(in srgb, var(--role-color) 80%, #000 20%); font-size: 16px;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .role.open .badge { transform: rotate(-6deg) scale(1.05); }
+  .role-name {
+    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 21px;
+    color: var(--text); letter-spacing: -0.005em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .count {
+    color: var(--muted); font-size: 13px; font-weight: 700; background: var(--bg);
+    padding: 3px 10px; border-radius: 999px; border: 1.5px solid var(--border-soft);
+    white-space: nowrap;
+  }
+  .role-actions { display: flex; align-items: center; gap: 8px; }
+  .mini-btn {
+    width: 30px; height: 30px; border-radius: 10px; background: transparent;
+    border: 1.5px solid var(--border-soft); color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mini-btn:hover { color: var(--accent-dark); border-color: var(--accent-dark); transform: translateY(-1px); }
+  .mini-btn svg { width: 14px; height: 14px; }
+  .chevron {
+    width: 22px; height: 22px; color: var(--muted);
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.22s ease;
+    flex-shrink: 0;
+  }
+  .role.open .chevron { transform: rotate(180deg); color: var(--role-color); }
+  .role-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+  .role.open .role-body { grid-template-rows: 1fr; }
+  .role-body-inner { overflow: hidden; }
+  .cmd-list { padding: 4px 16px 22px; display: flex; flex-direction: column; gap: 4px; }
+  .cmd-wrap {
+    border-radius: 12px; transition: background 0.18s ease;
+    opacity: 0; transform: translateY(-4px);
+  }
+  .role.open .cmd-wrap {
+    animation: cmdIn 0.32s ease forwards;
+    animation-delay: calc(var(--j) * 12ms);
+  }
+  .cmd-wrap.open { background: var(--bg); }
+  .cmd-wrap.hidden { display: none; }
+  .cmd-wrap.favorite .cmd::after {
+    content: ""; position: absolute; left: 0; top: 14%; bottom: 14%;
+    width: 3px; border-radius: 999px; background: #e5b23c;
+  }
+  .cmd {
+    position: relative; display: flex; align-items: baseline; gap: 12px;
+    padding: 9px 14px; border-radius: 12px; cursor: pointer; user-select: none;
+    -webkit-tap-highlight-color: transparent; transition: background 0.18s ease;
+  }
+  .cmd:hover { background: rgba(0,0,0,0.025); }
+  [data-theme="dark"] .cmd:hover { background: rgba(255,255,255,0.03); }
+  .cmd-wrap.open .cmd { background: transparent; padding-bottom: 6px; }
+  .cmd code {
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-size: 12.5px; font-weight: 600;
+    color: color-mix(in srgb, var(--role-color) 85%, #000 15%);
+    background: var(--role-color-soft);
+    border: 1.5px solid color-mix(in srgb, var(--role-color) 40%, transparent);
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap; flex-shrink: 0;
+  }
+  .cmd-desc { color: var(--muted); font-size: 14px; font-weight: 500; flex: 1; }
+  .cmd-desc mark { background: #ffe07a; color: #5a4000; border-radius: 3px; padding: 0 2px; font-weight: 700; }
+  [data-theme="dark"] .cmd-desc mark { background: #6b5a1e; color: #ffe9a8; }
+  .cmd-arrow {
+    width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; align-self: center;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s ease;
+  }
+  .cmd-wrap.open .cmd-arrow { transform: rotate(90deg); color: var(--role-color); }
+  .fav-btn {
+    width: 22px; height: 22px; border-radius: 50%; background: transparent;
+    border: none; color: var(--muted); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; align-self: center; opacity: 0;
+    transition: opacity 0.2s ease, color 0.2s ease, transform 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .cmd:hover .fav-btn,
+  .cmd-wrap.favorite .fav-btn { opacity: 1; }
+  .fav-btn:hover { transform: scale(1.2); }
+  .cmd-wrap.favorite .fav-btn svg { fill: #e5b23c; }
+  .fav-btn svg { width: 14px; height: 14px; fill: currentColor; }
+  .docs { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.38s cubic-bezier(0.4, 0, 0.2, 1); }
+  .cmd-wrap.open .docs { grid-template-rows: 1fr; }
+  .docs-inner { overflow: hidden; }
+  .docs-content { padding: 8px 16px 16px 16px; font-size: 13.5px; color: var(--text); }
+  .docs-content h4 {
+    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 12.5px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: color-mix(in srgb, var(--role-color) 75%, #000 25%);
+    margin-top: 14px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  [data-theme="dark"] .docs-content h4 { color: color-mix(in srgb, var(--role-color) 60%, #fff 40%); }
+  .docs-content h4:first-child { margin-top: 0; }
+  .docs-content h4::after { content: ""; flex: 1; height: 1.5px; background: var(--border-soft); border-radius: 1px; }
+  .docs-content p { color: var(--text); font-weight: 500; line-height: 1.6; margin-bottom: 6px; }
+  .docs-content ul { list-style: none; padding: 0; margin: 0 0 6px 0; }
+  .docs-content li {
+    position: relative; padding-left: 18px; margin-bottom: 4px;
+    color: var(--text); font-weight: 500; line-height: 1.55;
+  }
+  .docs-content li::before {
+    content: ""; position: absolute; left: 4px; top: 9px;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: color-mix(in srgb, var(--role-color) 70%, transparent);
+  }
+  .docs-content code {
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-size: 12px; font-weight: 500;
+    color: color-mix(in srgb, var(--role-color) 80%, #000 20%);
+    background: color-mix(in srgb, var(--role-color-soft) 80%, #fff 20%);
+    padding: 1px 6px; border-radius: 5px;
+    border: 1px solid color-mix(in srgb, var(--role-color) 25%, transparent);
+  }
+  [data-theme="dark"] .docs-content code {
+    background: color-mix(in srgb, var(--role-color-soft) 50%, transparent);
+    color: color-mix(in srgb, var(--role-color) 65%, #fff 35%);
+  }
+  .docs-content pre {
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-size: 12.5px; line-height: 1.6; background: var(--code-bg);
+    color: var(--code-text); padding: 12px 14px; border-radius: 10px;
+    overflow-x: auto; margin: 6px 0 10px 0; border: 1.5px solid #1a1713;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.05); position: relative;
+  }
+  .docs-content pre .tok-cmd { color: #ffd580; font-weight: 600; }
+  .docs-content pre .tok-arg { color: #a0d8ff; }
+  .docs-content pre .tok-opt { color: #c8b6ff; }
+  .docs-content pre .tok-bot { color: #7bd88f; }
+  .docs-content .label {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--role-color-soft);
+    color: color-mix(in srgb, var(--role-color) 80%, #000 20%);
+    margin-right: 6px;
+  }
+  .docs-content .req { background: #f6d5d5; color: #8a2a2a; }
+  [data-theme="dark"] .docs-content .req { background: #4a2020; color: #f0b8b8; }
+  .docs-content .opt { background: #d6e4f4; color: #2a4a6b; }
+  [data-theme="dark"] .docs-content .opt { background: #1e3040; color: #b8d4ec; }
+  .copy-btn {
+    position: absolute; top: 8px; right: 8px;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+    color: #f4efe6; border-radius: 6px; padding: 4px 8px;
+    font-family: inherit; font-size: 11px; font-weight: 700;
+    cursor: pointer; opacity: 0;
+    transition: opacity 0.2s ease, background 0.2s ease;
+  }
+  .docs-content pre:hover .copy-btn { opacity: 1; }
+  .copy-btn:hover { background: rgba(255,255,255,0.15); }
+  .copy-btn.copied { background: #4a7f4a; border-color: #7bd88f; }
+  .run-count {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 14px; padding: 6px 12px;
+    background: color-mix(in srgb, var(--role-color-soft) 60%, transparent);
+    border: 1.5px dashed color-mix(in srgb, var(--role-color) 45%, transparent);
+    border-radius: 10px; font-size: 12px; font-weight: 700;
+    color: color-mix(in srgb, var(--role-color) 75%, #000 25%);
+  }
+  [data-theme="dark"] .run-count { color: color-mix(in srgb, var(--role-color) 60%, #fff 40%); }
+  .run-count .pulse-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: color-mix(in srgb, var(--role-color) 80%, #000 20%);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .no-results { text-align: center; padding: 60px 20px; color: var(--muted); display: none; }
+  .no-results.visible { display: block; animation: fadeUp 0.4s ease both; }
+  .no-results-icon { width: 60px; height: 60px; margin: 0 auto 16px; color: var(--border); }
+  .no-results-title { font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 20px; color: var(--text); margin-bottom: 6px; }
+  .no-results-desc { font-size: 14px; font-weight: 500; }
+  footer {
+    text-align: center; color: var(--muted); font-size: 14px; font-weight: 600;
+    margin-top: 52px; animation: fadeUp 0.6s ease 0.4s both;
+  }
+  footer .box {
+    display: inline-block; background: var(--card); border: 2px solid var(--border);
+    border-radius: 999px; padding: 8px 20px; transition: transform 0.2s ease;
+  }
+  footer .box:hover { transform: translateY(-2px); }
+  .scroll-top {
+    position: fixed; bottom: 24px; right: 24px;
+    width: 46px; height: 46px; border-radius: 14px;
+    background: var(--card); border: 2px solid var(--border); color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; opacity: 0; pointer-events: none; transform: translateY(12px);
+    transition: opacity 0.25s ease, transform 0.25s ease, border-color 0.2s ease;
+    z-index: 30; box-shadow: 0 4px 0 rgba(0,0,0,0.08);
+  }
+  .scroll-top.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  .scroll-top:hover { border-color: var(--accent-dark); transform: translateY(-2px); }
+  .scroll-top svg { width: 20px; height: 20px; }
+  .profile-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+    backdrop-filter: blur(2px); opacity: 0; pointer-events: none;
+    transition: opacity 0.3s ease; z-index: 40;
+  }
+  .profile-backdrop.visible { opacity: 1; pointer-events: auto; }
+  .profile-panel {
+    position: fixed; top: 0; left: 0;
+    width: 360px; max-width: 90vw; height: 100vh;
+    background: var(--card); border-right: 2px solid var(--border);
+    transform: translateX(-100%);
+    transition: transform 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 50; overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .profile-panel.visible { transform: translateX(0); }
+  .profile-close {
+    position: absolute; top: 12px; right: 12px;
+    width: 32px; height: 32px; border-radius: 10px;
+    background: rgba(0,0,0,0.35); border: 1.5px solid rgba(255,255,255,0.2);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 2;
+    transition: background 0.2s ease, transform 0.2s ease;
+  }
+  .profile-close:hover { background: rgba(0,0,0,0.55); transform: scale(1.05); }
+  .profile-close svg { width: 14px; height: 14px; }
+  .profile-banner {
+    height: 120px; background-size: cover; background-position: center;
+    background-color: var(--accent-soft); position: relative;
+  }
+  .profile-banner::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.4));
+  }
+  .profile-avatar-wrap { position: relative; margin-top: -46px; margin-left: 22px; z-index: 2; }
+  .profile-avatar {
+    width: 92px; height: 92px; border-radius: 24px;
+    border: 4px solid var(--card); background: var(--card); object-fit: cover;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  }
+  .profile-status-dot {
+    position: absolute; bottom: 4px; right: 4px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #7bd88f; border: 4px solid var(--card);
+  }
+  .profile-body { padding: 14px 22px 30px; flex: 1; display: flex; flex-direction: column; }
+  .profile-name {
+    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 22px;
+    color: var(--text); line-height: 1.2; word-break: break-word;
+  }
+  .profile-handle {
+    font-family: "JetBrains Mono", monospace; font-size: 13px;
+    color: var(--muted); margin-top: 2px; word-break: break-all;
+  }
+  .profile-bio {
+    color: var(--text); font-size: 14px; font-weight: 500;
+    margin-top: 12px; padding: 12px 14px; background: var(--bg);
+    border-radius: 12px; border: 1.5px solid var(--border-soft);
+    min-height: 44px; line-height: 1.5;
+  }
+  .profile-bio.empty { color: var(--muted); font-style: italic; }
+  .profile-section-title {
+    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 11px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-top: 20px; margin-bottom: 8px;
+  }
+  .profile-roles { display: flex; flex-wrap: wrap; gap: 6px; }
+  .profile-role-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+    background: var(--bg);
+    border: 1.5px solid var(--chip-color, var(--border-soft));
+    color: color-mix(in srgb, var(--chip-color, var(--muted)) 80%, #000 20%);
+  }
+  [data-theme="dark"] .profile-role-chip {
+    color: color-mix(in srgb, var(--chip-color, var(--muted)) 65%, #fff 35%);
+  }
+  .profile-role-chip .chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chip-color, var(--muted)); }
+  .profile-meta { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .profile-meta-row {
+    display: flex; justify-content: space-between; gap: 12px;
+    font-size: 13px; padding: 8px 12px; background: var(--bg);
+    border-radius: 10px; border: 1.5px solid var(--border-soft);
+  }
+  .profile-meta-label { color: var(--muted); font-weight: 700; }
+  .profile-meta-value {
+    color: var(--text); font-weight: 600;
+    font-family: "JetBrains Mono", monospace; font-size: 12px;
+    text-align: right; word-break: break-all;
+  }
+  .profile-view-cmds {
+    margin-top: 20px; width: 100%; padding: 12px 16px; border-radius: 12px;
+    background: var(--accent-dark); border: none; color: #fff;
+    font-family: inherit; font-size: 14px; font-weight: 800;
+    letter-spacing: 0.02em; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: transform 0.2s ease;
+    box-shadow: 0 4px 0 color-mix(in srgb, var(--accent-dark) 70%, #000 30%);
+  }
+  .profile-view-cmds:hover { transform: translateY(-2px); }
+  .profile-view-cmds:active { transform: translateY(0); box-shadow: 0 2px 0 color-mix(in srgb, var(--accent-dark) 70%, #000 30%); }
+  .profile-view-cmds svg { width: 16px; height: 16px; }
+  .profile-empty { padding: 60px 22px; text-align: center; color: var(--muted); }
+  .profile-empty-title {
+    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 18px;
+    color: var(--text); margin-bottom: 6px;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes cmdIn { to { opacity: 1; transform: translateY(0); } }
+  @media (max-width: 600px) {
+    .wrap { padding: 24px 14px 80px; }
+    .role-header { padding: 16px 18px; }
+    .role-name { font-size: 18px; }
+    .badge { width: 34px; height: 34px; }
+    .cmd-list { padding: 4px 10px 18px; }
+    .cmd { flex-wrap: wrap; gap: 8px; }
+    .cmd-desc { flex: 1 1 100%; }
+    .count { font-size: 12px; padding: 2px 8px; }
+    .docs-content { padding: 6px 10px 14px 10px; }
+    .stats { gap: 16px; }
+    .stat-num { font-size: 20px; }
+    .sort-toggle { margin-left: 0; }
+    .kbd-hint { display: none; }
+    .scroll-top { bottom: 16px; right: 16px; }
+    .profile-panel { width: 100vw; }
+  }
+
+  /* ============================================================
+     MEMBER HUB
+     ============================================================ */
+  .view[hidden] { display: none !important; }
+  .hub-intro { text-align: center; margin-bottom: 24px; animation: fadeUp 0.5s ease both; }
+  .hub-title {
+    font-family: "Fredoka", sans-serif; font-weight: 600;
+    font-size: clamp(30px, 5.5vw, 46px); line-height: 1.05; letter-spacing: -0.01em;
+  }
+  .hub-title .accent { color: var(--accent-dark); }
+  .hub-sub { color: var(--muted); font-weight: 600; font-size: 15px; margin-top: 8px; }
+  .hub-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 14px; margin-bottom: 24px; animation: fadeUp 0.5s ease 0.06s both;
+  }
+  .hub-card {
+    position: relative; text-align: left; background: var(--card);
+    border: 2px solid var(--border); border-radius: 18px; padding: 17px;
+    font-family: inherit; color: var(--text); cursor: pointer;
+    display: flex; flex-direction: column; gap: 9px;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .hub-card:hover { transform: translateY(-3px); border-color: var(--accent-dark); box-shadow: 0 10px 22px rgba(58,52,42,0.08); }
+  .hub-card.active { border-color: var(--accent-dark); background: var(--accent-soft); }
+  .hub-icon {
+    width: 40px; height: 40px; border-radius: 13px; flex: none;
+    background: var(--accent-soft); border: 2px solid var(--border);
+    color: var(--accent-dark); display: flex; align-items: center; justify-content: center;
+  }
+  .hub-icon svg { width: 20px; height: 20px; }
+  .hub-card-title { font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 17px; }
+  .hub-card-desc { color: var(--muted); font-size: 13px; font-weight: 600; line-height: 1.45; }
+  .hub-badge {
+    position: absolute; top: 13px; right: 13px; font-size: 11px; font-weight: 800;
+    color: var(--accent-dark); background: var(--accent-soft); border: 1.5px solid var(--accent);
+    border-radius: 999px; padding: 2px 9px;
+  }
+  .tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 22px; animation: fadeUp 0.5s ease 0.1s both; }
+  .tab {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--card); border: 2px solid var(--border); color: var(--muted);
+    border-radius: 999px; padding: 8px 16px; font-family: inherit;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+  }
+  .tab svg { width: 15px; height: 15px; }
+  .tab:hover { color: var(--text); border-color: var(--accent-dark); transform: translateY(-2px); }
+  .tab.active { background: var(--accent); border-color: var(--accent-dark); color: #ffffff; }
+
+  .panel {
+    background: var(--card); border: 2px solid var(--border); border-radius: 20px;
+    padding: 22px; animation: fadeUp 0.4s ease both;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .panel-title { font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 20px; }
+  .panel-sub { color: var(--muted); font-size: 14px; font-weight: 600; margin: 5px 0 18px; }
+
+  .topic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 10px; }
+  .topic {
+    display: flex; align-items: center; gap: 10px; text-align: left;
+    background: var(--bg); border: 2px solid var(--border-soft); border-radius: 14px;
+    padding: 13px 14px; font-family: inherit; color: var(--text);
+    font-size: 13.5px; font-weight: 700; cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  }
+  .topic svg { width: 17px; height: 17px; color: var(--accent-dark); flex: none; }
+  .topic:hover { transform: translateY(-2px); border-color: var(--accent-dark); }
+  .topic.active { border-color: var(--accent-dark); background: var(--accent-soft); }
+
+  .wizard-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .step-label { font-size: 11.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+  .progress-track { height: 8px; background: var(--bg); border: 1.5px solid var(--border-soft); border-radius: 999px; overflow: hidden; margin-bottom: 20px; }
+  .progress-fill { height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+  .q-label { font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 19px; margin-bottom: 6px; }
+  .q-hint { color: var(--muted); font-size: 13.5px; font-weight: 600; margin-bottom: 13px; }
+  .q-input, .q-textarea, .q-select {
+    width: 100%; font-family: inherit; font-size: 15px; font-weight: 600; color: var(--text);
+    background: var(--bg); border: 2px solid var(--border); border-radius: 14px;
+    padding: 12px 14px; outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .q-select { cursor: pointer; }
+  .q-textarea { min-height: 132px; resize: vertical; line-height: 1.55; }
+  .q-input:focus, .q-textarea:focus, .q-select:focus { border-color: var(--accent-dark); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .q-error { display: none; color: #c2705a; font-size: 13px; font-weight: 700; margin-top: 9px; }
+  .q-error.visible { display: block; }
+  .counter { text-align: right; font-size: 12px; font-weight: 700; color: var(--muted); margin-top: 6px; }
+  .wizard-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 20px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: inherit; font-size: 14px; font-weight: 700;
+    background: var(--card); color: var(--text); border: 2px solid var(--border);
+    border-radius: 14px; padding: 11px 20px; cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, filter 0.18s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn svg { width: 16px; height: 16px; }
+  .btn:hover { transform: translateY(-2px); border-color: var(--accent-dark); }
+  .btn.primary { background: var(--accent); border-color: var(--accent-dark); color: #ffffff; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.ghost { background: transparent; }
+  .btn.danger { color: #c2705a; border-color: #d8a292; }
+  .btn.small { padding: 7px 13px; font-size: 12.5px; border-radius: 11px; }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+  .review-list { display: flex; flex-direction: column; gap: 10px; }
+  .review-row { background: var(--bg); border: 2px solid var(--border-soft); border-radius: 14px; padding: 12px 14px; }
+  .review-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .review-key { font-size: 11.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+  .review-val { font-size: 14.5px; font-weight: 600; white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
+  .jump { background: none; border: none; color: var(--accent-dark); font-family: inherit; font-size: 12px; font-weight: 800; cursor: pointer; padding: 0; }
+  .jump:hover { text-decoration: underline; }
+
+  .identity-box {
+    display: flex; align-items: center; gap: 13px; margin-top: 15px;
+    border: 2px dashed var(--border); border-radius: 16px; padding: 13px;
+  }
+  .identity-avatar { width: 46px; height: 46px; border-radius: 50%; border: 2px solid var(--border); object-fit: cover; background: var(--bg); flex: none; }
+  .identity-name { font-weight: 800; font-size: 15px; }
+  .identity-handle { color: var(--muted); font-size: 13px; font-weight: 700; }
+
+  /* popup */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 60; background: rgba(38, 33, 26, 0.4);
+    -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);
+    opacity: 0; pointer-events: none; transition: opacity 0.28s ease;
+  }
+  .modal-backdrop.visible { opacity: 1; pointer-events: auto; }
+  .modal { position: fixed; inset: 0; z-index: 61; display: flex; align-items: center; justify-content: center; padding: 20px; pointer-events: none; }
+  .modal.open { pointer-events: auto; }
+  .modal-card {
+    width: 100%; max-width: 430px; text-align: center;
+    background: var(--card); border: 2px solid var(--border); border-radius: 24px;
+    padding: 26px 24px 22px; box-shadow: 0 24px 55px rgba(40, 35, 28, 0.22);
+    transform: translateY(20px) scale(0.94); opacity: 0;
+    transition: transform 0.34s cubic-bezier(0.2, 0.8, 0.25, 1), opacity 0.3s ease;
+  }
+  .modal.open .modal-card { transform: translateY(0) scale(1); opacity: 1; }
+  .modal-kicker { font-size: 11.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .modal-title { font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 22px; margin: 6px 0 16px; }
+  .modal-avatar { width: 84px; height: 84px; border-radius: 50%; border: 3px solid var(--accent); object-fit: cover; background: var(--bg); }
+  .modal-name { font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 19px; margin-top: 12px; }
+  .modal-handle { color: var(--muted); font-size: 13.5px; font-weight: 700; }
+  .modal-roles { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 13px; }
+  .modal-role {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 700; color: var(--text);
+    background: var(--bg); border: 1.5px solid var(--border-soft);
+    border-radius: 999px; padding: 4px 10px;
+  }
+  .modal-role .chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--chip-color, var(--accent)); }
+  .modal-meta { display: flex; justify-content: center; gap: 18px; margin-top: 15px; }
+  .modal-meta-item { text-align: center; }
+  .modal-meta-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .modal-meta-value { font-size: 13px; font-weight: 700; margin-top: 2px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 22px; }
+  .modal-actions .btn { flex: 1; justify-content: center; }
+  .modal-note { color: var(--muted); font-size: 12.5px; font-weight: 600; margin-top: 14px; }
+
+  /* tickets */
+  .ticket-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .ticket-toolbar .q-input { flex: 1 1 220px; }
+  .ticket-list { display: flex; flex-direction: column; gap: 12px; }
+  .ticket-item {
+    background: var(--bg); border: 2px solid var(--border-soft); border-radius: 16px;
+    padding: 15px 16px; cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease;
+  }
+  .ticket-item:hover { transform: translateY(-2px); border-color: var(--accent-dark); }
+  .ticket-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .ticket-id { font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .ticket-subject { font-size: 15px; font-weight: 800; margin-top: 3px; }
+  .ticket-meta { color: var(--muted); font-size: 12.5px; font-weight: 700; margin-top: 7px; }
+  .status-pill {
+    font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+    border-radius: 999px; padding: 4px 10px; border: 1.5px solid var(--border); white-space: nowrap;
+    color: var(--muted); background: var(--card);
+  }
+  .status-pill.status-open { color: var(--accent-dark); border-color: var(--accent); background: var(--accent-soft); }
+  .status-pill.status-answered { color: #6b7f4a; border-color: #a8bd8a; background: rgba(140, 170, 110, 0.16); }
+  .status-pill.status-closed { color: var(--muted); border-color: var(--border); background: var(--bg); }
+  .ticket-detail { margin-top: 14px; border-top: 2px dashed var(--border-soft); padding-top: 14px; }
+  .thread { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .reply { background: var(--bg); border: 2px solid var(--border-soft); border-radius: 14px; padding: 11px 14px; }
+  .reply.staff { border-color: var(--accent); background: var(--accent-soft); }
+  .reply-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; font-weight: 800; color: var(--muted); }
+  .reply-body { font-size: 14px; font-weight: 600; white-space: pre-wrap; word-break: break-word; margin-top: 5px; }
+  .reply-form { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .empty-note { color: var(--muted); font-size: 14px; font-weight: 600; text-align: center; padding: 26px 10px; }
+
+  .next-steps { display: flex; flex-direction: column; gap: 10px; margin: 18px 0; text-align: left; }
+  .next-step { display: flex; gap: 11px; align-items: flex-start; background: var(--bg); border: 2px solid var(--border-soft); border-radius: 14px; padding: 12px 14px; }
+  .next-step-num {
+    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 13px;
+    width: 24px; height: 24px; flex: none; border-radius: 50%;
+    background: var(--accent-soft); color: var(--accent-dark); border: 1.5px solid var(--accent);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .next-step-text { font-size: 13.5px; font-weight: 600; }
+  .copy-strip {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--bg); border: 2px solid var(--border); border-radius: 14px;
+    padding: 12px 15px; margin: 0 auto 6px; max-width: 320px;
+  }
+  .copy-id { font-family: "JetBrains Mono", monospace; font-size: 17px; font-weight: 600; letter-spacing: 0.06em; }
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .info-card { background: var(--bg); border: 2px solid var(--border-soft); border-radius: 16px; padding: 16px; }
+  .info-card h3 { font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 16px; margin-bottom: 6px; }
+  .info-card p, .info-card li { color: var(--muted); font-size: 13.5px; font-weight: 600; }
+  .info-card ul { padding-left: 18px; margin-top: 6px; }
+  .info-card li { margin-bottom: 4px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; z-index: 70;
+    transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+    background: var(--code-bg); color: var(--code-text);
+    border-radius: 14px; padding: 11px 18px; font-size: 13.5px; font-weight: 700;
+    transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.25, 1), opacity 0.25s ease;
+    max-width: 90vw; text-align: center;
+  }
+  .toast.visible { transform: translate(-50%, 0); opacity: 1; }
+
+  @media (max-width: 560px) {
+    .hub-grid { grid-template-columns: 1fr 1fr; }
+    .hub-card { padding: 14px; }
+    .hub-card-desc { display: none; }
+    .panel { padding: 17px; }
+    .modal-actions { flex-direction: column; }
+    .wizard-nav { flex-direction: column-reverse; }
+    .wizard-nav .btn { justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand"><span class="dot-brand"></span>bot command reference</div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="favoritesBtn" title="Show favorites only (F)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+      </button>
+      <button class="icon-btn" id="collapseBtn" title="Collapse other roles when opening one (C)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="12" x2="21" y2="12"></line></svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" title="Toggle dark mode (D)">
+        <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+        </svg>
+      </button>
+      <button class="icon-btn" id="expandAllBtn" title="Expand all (E)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
+      </button>
+    </div>
+  </div>
+  <div class="hub-intro">
+    <h1 class="hub-title">member<span class="accent"> hub</span></h1>
+    <p class="hub-sub">Get help, read the commands, and follow your tickets.</p>
+  </div>
+
+  <div class="hub-grid" id="hubGrid">
+    <button class="hub-card" data-view="support">
+      <span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="4"></circle><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"></line><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"></line><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"></line><line x1="9.17" y1="14.83" x2="4.93" y2="19.07"></line></svg></span>
+      <span class="hub-badge" id="openTicketBadge" hidden>0 open</span>
+      <span class="hub-card-title">Support</span>
+      <span class="hub-card-desc">Open a ticket and answer a few short questions.</span>
+    </button>
+    <button class="hub-card" data-view="commands">
+      <span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg></span>
+      <span class="hub-card-title">Commands</span>
+      <span class="hub-card-desc">Search every command and see what your roles can use.</span>
+    </button>
+    <button class="hub-card" data-view="tickets">
+      <span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"></path><path d="M13 5v2"></path><path d="M13 11v2"></path><path d="M13 17v2"></path></svg></span>
+      <span class="hub-card-title">My tickets</span>
+      <span class="hub-card-desc">Read replies and follow up on what you sent us.</span>
+    </button>
+    <button class="hub-card" data-view="info">
+      <span class="hub-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></span>
+      <span class="hub-card-title">Info</span>
+      <span class="hub-card-desc">How support works and what to expect from us.</span>
+    </button>
+  </div>
+
+  <nav class="tabs" id="hubTabs">
+    <button class="tab" data-view="support">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="4"></circle><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"></line><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"></line><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"></line><line x1="9.17" y1="14.83" x2="4.93" y2="19.07"></line></svg>
+      Support
+    </button>
+    <button class="tab" data-view="commands">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+      Commands
+    </button>
+    <button class="tab" data-view="tickets">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"></path><path d="M13 5v2"></path><path d="M13 11v2"></path><path d="M13 17v2"></path></svg>
+      My tickets
+    </button>
+    <button class="tab" data-view="info">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+      Info
+    </button>
+  </nav>
+
+  <section class="view" id="view-support" hidden>
+    <div class="panel" id="supportStart">
+      <div class="panel-title">Support</div>
+      <p class="panel-sub">Pick the topic that fits best. We will ask a few short questions, then send it to the team.</p>
+      <div class="topic-grid" id="topicGrid"></div>
+    </div>
+    <div class="panel" id="supportWizard" hidden></div>
+    <div class="panel" id="supportDone" hidden></div>
+  </section>
+
+  <section class="view" id="view-tickets" hidden>
+    <div class="panel">
+      <div class="panel-title">My tickets</div>
+      <p class="panel-sub">Type the same username or user ID you used in a ticket to read its status.</p>
+      <div class="ticket-toolbar">
+        <input class="q-input" id="ticketLookup" placeholder="Username or user ID" autocomplete="off" spellcheck="false">
+        <button class="btn primary" id="ticketLookupBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          Look up
+        </button>
+      </div>
+      <div class="q-error" id="ticketLookupError"></div>
+      <div id="ticketListWrap"><div class="empty-note">No lookup yet. Add your username or user ID above.</div></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-info" hidden>
+    <div class="panel">
+      <div class="panel-title">Info</div>
+      <p class="panel-sub">Short answers to the things people ask us most.</p>
+      <div class="info-grid">
+        <div class="info-card">
+          <h3>How support works</h3>
+          <ul>
+            <li>You send a ticket from this page.</li>
+            <li>A staff member reads it and replies.</li>
+            <li>You can answer back on the My tickets page.</li>
+          </ul>
+        </div>
+        <div class="info-card">
+          <h3>How long it takes</h3>
+          <ul>
+            <li>Most tickets get an answer within 24 hours.</li>
+            <li>Urgent tickets are looked at first.</li>
+            <li>You can open up to 5 tickets at once.</li>
+          </ul>
+        </div>
+        <div class="info-card">
+          <h3>Before you send</h3>
+          <ul>
+            <li>Use the name or ID you want us to find.</li>
+            <li>Add links if you have proof.</li>
+            <li>Keep it short and clear.</li>
+          </ul>
+        </div>
+        <div class="info-card">
+          <h3>Commands page</h3>
+          <p>Every command the bot has, with what each one does. Search by name, or type your username to see only what your roles can use.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-commands">
+  <header>
+    <h1>command<span class="accent">s</span> list</h1>
+    <p class="subtitle">search, filter, and explore every command</p>
+  </header>
+  <div class="stats">
+    <div class="stat"><div class="stat-num" id="statRoles">0</div><div class="stat-label">Roles</div></div>
+    <div class="stat"><div class="stat-num" id="statCmds">0 <small id="statCmdsTotal"></small></div><div class="stat-label">Commands</div></div>
+    <div class="stat"><div class="stat-num" id="statFavs">0</div><div class="stat-label">Favorites</div></div>
+  </div>
+  <div class="controls">
+    <div class="search-wrap" id="searchWrap">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input id="searchInput" type="text" placeholder="Search commands, or type @username / UID to look up a member" autocomplete="off" spellcheck="false">
+      <span class="kbd-hint">/</span>
+      <button class="search-clear" id="searchClear" title="Clear (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="filters" id="filters"></div>
+  </div>
+  <div class="results-meta hidden" id="resultsMeta"></div>
+  <div class="roles" id="roles"></div>
+  <div class="no-results" id="noResults">
+    <svg class="no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+    <div class="no-results-title">No commands found</div>
+    <div class="no-results-desc">Try a different search or clear the filters.</div>
+  </div>
+  <footer><div class="box">press <strong>/</strong> to search &middot; <strong>Esc</strong> to clear</div></footer>
+  </section>
+</div>
+
+<div class="modal-backdrop" id="confirmBackdrop"></div>
+<div class="modal" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="modal-card">
+    <div class="modal-kicker">Please check</div>
+    <div class="modal-title" id="confirmTitle">Is this you?</div>
+    <img class="modal-avatar" id="confirmAvatar" alt="">
+    <div class="modal-name" id="confirmName"></div>
+    <div class="modal-handle" id="confirmHandle"></div>
+    <div class="modal-roles" id="confirmRoles"></div>
+    <div class="modal-meta" id="confirmMeta"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="confirmNo">No, not me</button>
+      <button class="btn primary" id="confirmYes">Yes, that is me</button>
+    </div>
+    <div class="modal-note">We only use this to find your ticket faster.</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<button class="scroll-top" id="scrollTop" title="Back to top">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"></polyline></svg>
+</button>
+<div class="profile-backdrop" id="profileBackdrop"></div>
+<aside class="profile-panel" id="profilePanel">
+  <button class="profile-close" id="profileClose" title="Close (Esc)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+  </button>
+  <div id="profileContent"></div>
+</aside>
+<script>
+/* ============================================================
+   SUPABASE CONFIG (anon key — safe to be public)
+   ============================================================ */
+const SUPABASE_URL = "https://uzebtuzmvvlufuywcxvw.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6ZWJ0dXptdnZsdWZ1eXdjeHZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyNjc4MDYsImV4cCI6MjEwNDg0MzgwNn0.f9QhXHqQ7VBSTIjz9nBzcgnBk7x_dmmcuKflT5hGqNU";
+
+/* ============================================================
+   ROLES — command data
+   ============================================================ */
+const ROLES = [
+  {
+    name: "Owners", color: "#d96a6a", soft: "#f6d5d5",
+    commands: [
+      ["purge <amount>", "Delete recent messages", { how: "Bulk-delete the most recent messages in the current channel.", args: [["<amount>", "Number of messages to delete, 1-1000.", "required"]], ex: [">purge 50", ">purge 100"], use: "Clean up a spam wave or reset a busy channel.", notes: ["Discord enforces a 14-day limit on bulk delete.", "Requires Manage Messages."] }],
+      ["purgeuser <user> [amount]", "Delete messages from a user", { how: "Deletes recent messages from one user in the current channel.", args: [["<user>", "Mention, ID, or username.", "required"], ["[amount]", "Scan count. Default 50.", "optional"]], ex: [">purgeuser @spammer", ">purgeuser @spammer 200"], use: "Remove one user's messages without touching others." }],
+      ["purgebots [amount]", "Delete bot messages", { how: "Deletes recent messages posted by bots.", args: [["[amount]", "Scan count. Default 50.", "optional"]], ex: [">purgebots", ">purgebots 100"], use: "Clear webhook or bot spam quickly." }],
+      ["purgecontains <text>", "Delete messages containing a string", { how: "Deletes messages matching a substring in the last 200 messages.", args: [["<text>", "Substring. Case-insensitive.", "required"]], ex: [">purgecontains discord.gg", ">purgecontains scam"], use: "Wipe invite links or scam phrases in one pass." }],
+      ["purgeembeds [amount]", "Delete messages with embeds", { how: "Deletes messages containing embeds.", args: [["[amount]", "Scan count. Default 50.", "optional"]], ex: [">purgeembeds"], use: "Clean link previews and bot spam." }],
+      ["purgeattachments [amount]", "Delete messages with attachments", { how: "Deletes messages with file attachments.", args: [["[amount]", "Scan count. Default 50.", "optional"]], ex: [">purgeattachments"], use: "Remove image dumps or leaked files." }],
+      ["kick <member> [reason]", "Kick a member", { how: "Removes a member from the server.", args: [["<member>", "Member to kick.", "required"], ["[reason]", "Reason logged.", "optional"]], ex: [">kick @user", ">kick @user Spam"], use: "First-time offenses where you want them gone but not banned." }],
+      ["ban <member> [reason]", "Ban a member", { how: "Permanently bans a member.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">ban @user", ">ban @user Repeated violations"], use: "Serious or repeat offenses." }],
+      ["unban <user_id> [reason]", "Unban a user by ID", { how: "Lifts a ban using the user's numeric ID.", args: [["<user_id>", "Discord user ID.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">unban 1243983895481815114"], use: "Reverse a ban after an appeal." }],
+      ["softban <member> [reason]", "Ban then unban to purge messages", { how: "Bans and immediately unbans, purging recent messages.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">softban @user"], use: "Clean a user's recent messages without a permanent ban." }],
+      ["tempban <member> <duration> [reason]", "Temporary ban", { how: "Bans for a set time, then auto-unbans.", args: [["<member>", "Target.", "required"], ["<duration>", "e.g. `1h`, `1d`.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">tempban @user 1d", ">tempban @user 7d Harassment"], use: "Cool-off bans." }],
+      ["banlist", "List banned users", { how: "Shows up to 100 banned users with reasons.", ex: [">banlist"], use: "Quickly audit bans." }],
+      ["timeout <member> <duration> [reason]", "Timeout a member", { how: "Discord-native timeout. They can read but not send.", args: [["<member>", "Target.", "required"], ["<duration>", "Duration. Max 28d.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">timeout @user 10m", ">timeout @user 1d Spamming"], use: "First-step punishment." }],
+      ["untimeout <member>", "Remove a timeout", { how: "Ends an active timeout.", args: [["<member>", "Target.", "required"]], ex: [">untimeout @user"], use: "Reverse a timeout." }],
+      ["warn <member> [reason]", "Warn a member", { how: "Adds a warning and DMs the member.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">warn @user Be nice"], use: "Documented soft punishment." }],
+      ["warnings <member>", "List warnings for a member", { how: "Lists every warning with moderator and timestamp.", args: [["<member>", "Target.", "required"]], ex: [">warnings @user"], use: "Review history before a decision." }],
+      ["delwarn <member> <index>", "Delete a specific warning", { how: "Removes a warning by index.", args: [["<member>", "Target.", "required"], ["<index>", "Warning number.", "required"]], ex: [">delwarn @user 2"], use: "Correct an invalid warning." }],
+      ["clearwarnings <member>", "Clear all warnings", { how: "Wipes all warnings for a member.", args: [["<member>", "Target.", "required"]], ex: [">clearwarnings @user"], use: "Full reset after appeal." }],
+      ["slowmode <duration> [channel]", "Set slowmode (0 to disable)", { how: "Sets per-user cooldown in a channel.", args: [["<duration>", "e.g. `10s`, `0`.", "required"], ["[channel]", "Default: current.", "optional"]], ex: [">slowmode 10s", ">slowmode 1m #general", ">slowmode 0"], use: "Calm a fast channel." }],
+      ["lock [channel]", "Lock a channel", { how: "Denies @everyone send permission.", args: [["[channel]", "Default: current.", "optional"]], ex: [">lock", ">lock #general"], use: "Freeze a channel during an incident." }],
+      ["unlock [channel]", "Unlock a channel", { how: "Restores @everyone send permission.", args: [["[channel]", "Default: current.", "optional"]], ex: [">unlock"], use: "Undo a lock." }],
+      ["hide [channel]", "Hide a channel", { how: "Removes @everyone view permission.", args: [["[channel]", "Default: current.", "optional"]], ex: [">hide"], use: "Make a channel invisible." }],
+      ["unhide [channel]", "Unhide a channel", { how: "Restores @everyone view permission.", args: [["[channel]", "Default: current.", "optional"]], ex: [">unhide"], use: "Undo a hide." }],
+      ["lockall", "Lock every text channel", { how: "Locks all text channels. Confirms first.", ex: [">lockall"], use: "Emergency response during a raid." }],
+      ["unlockall", "Unlock every text channel", { how: "Unlocks all text channels.", ex: [">unlockall"], use: "End of lockdown." }],
+      ["purgechannel [channel]", "Delete and recreate a channel", { how: "Clones the channel (same name, perms, topic) and deletes the original.", args: [["[channel]", "Default: current.", "optional"]], ex: [">purgechannel", ">nuke #general"], use: "Wipe a channel without losing config." }],
+      ["nuke [channel]", "Alias for purgechannel", { how: "Same as `>purgechannel`.", ex: [">nuke"], use: "Convenience alias." }],
+      ["topic <text>", "Set a channel topic", { how: "Changes the current channel's topic.", args: [["<text>", "New topic.", "required"]], ex: [">topic Welcome to #general!"], use: "Update channel purpose." }],
+      ["rename <name> [channel]", "Rename a channel", { how: "Renames a channel.", args: [["<name>", "New name.", "required"], ["[channel]", "Default: current.", "optional"]], ex: [">rename general-chat"], use: "Reorganize names." }],
+      ["nick <member> [nickname]", "Change a member's nickname", { how: "Sets or resets a nickname.", args: [["<member>", "Target.", "required"], ["[nickname]", "New nick. Omit to reset.", "optional"]], ex: [">nick @user CoolGuy", ">nick @user"], use: "Enforce nickname policies." }],
+      ["resetnick <member>", "Reset a member's nickname", { how: "Resets the nickname back to username.", args: [["<member>", "Target.", "required"]], ex: [">resetnick @user"], use: "Undo forced nick." }],
+      ["addrole <member> <role>", "Add a role to a member", { how: "Adds the given role to the member.", args: [["<member>", "Target.", "required"], ["<role>", "Role to add.", "required"]], ex: [">addrole @user Verified"], use: "Grant roles manually." }],
+      ["removerole <member> <role>", "Remove a role from a member", { how: "Removes the given role from the member.", args: [["<member>", "Target.", "required"], ["<role>", "Role to remove.", "required"]], ex: [">removerole @user Muted"], use: "Revoke roles manually." }],
+      ["roleall <role> [include_bots]", "Give a role to every member", { how: "Assigns the role to every human member.", args: [["<role>", "Role to give.", "required"], ["[include_bots]", "`true` to include bots.", "optional"]], ex: [">roleall Verified"], use: "Bulk role grant." }],
+      ["rolecreate <name> [color]", "Create a role", { how: "Creates a new role with an optional color.", args: [["<name>", "Name.", "required"], ["[color]", "Hex color.", "optional"]], ex: [">rolecreate VIP #ffaa00"], use: "Quick role setup." }],
+      ["roledelete <role>", "Delete a role", { how: "Deletes a role. Confirms first.", args: [["<role>", "Role.", "required"]], ex: [">roledelete VIP"], use: "Remove obsolete roles." }],
+      ["rolecolor <role> <color>", "Change a role's color", { how: "Changes the role's color.", args: [["<role>", "Role.", "required"], ["<color>", "Hex color.", "required"]], ex: [">rolecolor VIP #ffaa00"], use: "Update appearance." }],
+      ["dm <member> <message>", "DM a member", { how: "Sends a DM from the bot.", args: [["<member>", "Target.", "required"], ["<message>", "Text.", "required"]], ex: [">dm @user Please review the rules."], use: "Private outreach." }],
+      ["say <text>", "Make the bot say something", { how: "Bot echoes your text.", args: [["<text>", "Text.", "required"]], ex: [">say Welcome!"], use: "Announcements without a bot tag." }],
+      ["embed <title> <description>", "Send a quick embed", { how: "Sends a basic embed.", args: [["<title>", "Title.", "required"], ["<description>", "Body.", "required"]], ex: [">embed Rules Please read #rules."], use: "Quick formatted announcement." }],
+      ["poll <question>", "Yes/no poll", { how: "Posts a yes/no/unsure poll.", args: [["<question>", "Question.", "required"]], ex: [">poll Movie night?"], use: "Fast community voting." }],
+      ["massdm <message>", "DM every human member", { how: "Sends the same DM to every non-bot with delays.", args: [["<message>", "Message.", "required"]], ex: [">massdm Maintenance in 1 hour."], use: "Server-wide DM.", notes: ["Heavily rate-limited by Discord."] }],
+      ["raidmode", "Toggle raid mode", { how: "Toggles raid mode. Auto-kicks accounts under 1 day old.", ex: [">raidmode"], use: "Emergency defense." }],
+      ["posthelp <channel_id>", "Publish the tiered command list", { how: "Posts the full tiered command reference.", args: [["<channel_id>", "Channel ID.", "required"]], ex: [">posthelp 123456789012345678"], use: "Publish reference." }],
+      ["slogs", "Toggle message logging", { how: "Turns message logging on/off for this server.", ex: [">slogs"], use: "Enable or disable archiving." }],
+      ["checkbg <user>", "Full background check", { how: "Aggregates identity, roles, history, and risk score.", args: [["<user>", "Target.", "required"]], ex: [">checkbg @user"], use: "One-shot review." }],
+      ["vhistory <user>", "Browse log threads", { how: "Shows every log thread with an **Open Logs** button.", args: [["<user>", "Target.", "required"]], ex: [">vhistory @user"], use: "Find a user's archived logs." }],
+      ["mhistory <user>", "Message history", { how: "Paginated viewer of logged messages.", args: [["<user>", "Target.", "required"]], ex: [">mhistory @user"], use: "Read back what a user said." }],
+      ["rhistory <user>", "Deleted message history", { how: "Paginated viewer of deleted messages.", args: [["<user>", "Target.", "required"]], ex: [">rhistory @user"], use: "See what someone tried to hide." }],
+      ["ehistory <user>", "Edit history", { how: "Paginated viewer of edits.", args: [["<user>", "Target.", "required"]], ex: [">ehistory @user"], use: "Catch sneaky edits." }],
+      ["history <user>", "Moderation history", { how: "Full moderation action summary.", args: [["<user>", "Target.", "required"]], ex: [">history @user"], use: "Audit a user's record." }],
+      ["note <user> <text>", "Add a note", { how: "Adds a private staff note.", args: [["<user>", "Target.", "required"], ["<text>", "Note.", "required"]], ex: [">note @user Watch for alts"], use: "Share context." }],
+      ["notes <user>", "List notes on a member", { how: "Shows every note on a user.", args: [["<user>", "Target.", "required"]], ex: [">notes @user"], use: "Review accumulated notes." }],
+      ["delnote <user> <index>", "Delete a specific note", { how: "Removes one note by index.", args: [["<user>", "Target.", "required"], ["<index>", "Note #.", "required"]], ex: [">delnote @user 2"], use: "Clean up notes." }],
+      ["clearnotes <user>", "Clear notes", { how: "Wipes all notes on a user.", args: [["<user>", "Target.", "required"]], ex: [">clearnotes @user"], use: "Full reset." }],
+      ["watch <user> <reason>", "Add to watchlist", { how: "Adds a user to the watchlist. Alerts on rejoin.", args: [["<user>", "Target.", "required"], ["<reason>", "Reason.", "required"]], ex: [">watch @user Suspected alt"], use: "Track suspicious accounts." }],
+      ["unwatch <user>", "Remove from watchlist", { how: "Removes from the watchlist.", args: [["<user>", "Target.", "required"]], ex: [">unwatch @user"], use: "Clear resolved watches." }],
+      ["watchlist", "List watchlist", { how: "Shows every watched user.", ex: [">watchlist"], use: "Review watched users." }],
+      ["quickwarn <user> <reason>", "Warn + DM", { how: "Warns and DMs in one step.", args: [["<user>", "Target.", "required"], ["<reason>", "Reason.", "required"]], ex: [">quickwarn @user Keep it civil"], use: "Fast warn with DM." }],
+      ["purgeuserall <user>", "Purge everywhere", { how: "Deletes a user's messages across every text channel.", args: [["<user>", "Target.", "required"]], ex: [">purgeuserall @user"], use: "Wipe a user's footprint." }],
+      ["masskick <users...>", "Kick multiple", { how: "Kicks every mentioned member.", args: [["<users...>", "Two or more.", "required"]], ex: [">masskick @a @b @c Raid"], use: "Raid cleanup." }],
+      ["massban <users...>", "Ban multiple", { how: "Bans every mentioned member.", args: [["<users...>", "Two or more.", "required"]], ex: [">massban @a @b @c Raid"], use: "Raid cleanup." }],
+      ["softbanall <users...>", "Softban multiple", { how: "Softbans every mentioned member.", args: [["<users...>", "Two or more.", "required"]], ex: [">softbanall @a @b @c Purge"], use: "Mass purge without bans." }],
+      ["lockuser <user> <channel>", "Deny send in a channel", { how: "Per-user channel lock.", args: [["<user>", "Target.", "required"], ["[channel]", "Default: current.", "optional"]], ex: [">lockuser @user #general"], use: "Per-user mute in one channel." }],
+      ["unlockuser <user> <channel>", "Restore send in a channel", { how: "Per-user channel unlock.", args: [["<user>", "Target.", "required"], ["[channel]", "Default: current.", "optional"]], ex: [">unlockuser @user #general"], use: "Undo a lockuser." }],
+      ["recentjoins [count]", "Newest members", { how: "Lists newest members with join and account age.", args: [["[count]", "1-50. Default 10.", "optional"]], ex: [">recentjoins 25"], use: "Spot raid patterns." }],
+      ["newaccounts [days]", "Newest accounts", { how: "Lists members with accounts under N days old.", args: [["[days]", "1-365. Default 7.", "optional"]], ex: [">newaccounts 3"], use: "Flag alt accounts." }],
+      ["joinposition <user>", "Join position", { how: "Shows the user's join order position.", args: [["<user>", "Target.", "required"]], ex: [">joinposition @user"], use: "Fun stat." }],
+      ["rolecount <role>", "Count with role", { how: "Shows how many members have the role.", args: [["<role>", "Role.", "required"]], ex: [">rolecount Verified"], use: "Audit distribution." }],
+      ["perms <user>", "Key permissions", { how: "Shows yes/no list of important permissions.", args: [["<user>", "Target.", "required"]], ex: [">perms @user"], use: "Fast perm check." }]
+    ]
+  },
+  {
+    name: "Admins", color: "#e09356", soft: "#f8e2cd",
+    commands: [
+      ["purge <amount>", "Delete recent messages", { how: "Bulk-delete messages.", args: [["<amount>", "1-1000.", "required"]], ex: [">purge 50"] }],
+      ["purgeuser <user> [amount]", "Delete messages from a user", { how: "Delete a user's recent messages.", args: [["<user>", "Target.", "required"], ["[amount]", "Scan.", "optional"]], ex: [">purgeuser @user 100"] }],
+      ["purgebots [amount]", "Delete bot messages", { how: "Delete bot messages.", args: [["[amount]", "Scan.", "optional"]], ex: [">purgebots"] }],
+      ["purgecontains <text>", "Delete messages containing a string", { how: "Delete by substring.", args: [["<text>", "Substring.", "required"]], ex: [">purgecontains discord.gg"] }],
+      ["purgeembeds [amount]", "Delete messages with embeds", { how: "Delete embeds.", args: [["[amount]", "Scan.", "optional"]], ex: [">purgeembeds"] }],
+      ["purgeattachments [amount]", "Delete messages with attachments", { how: "Delete attachments.", args: [["[amount]", "Scan.", "optional"]], ex: [">purgeattachments"] }],
+      ["kick <member> [reason]", "Kick a member", { how: "Kick a member.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">kick @user Spam"] }],
+      ["ban <member> [reason]", "Ban a member", { how: "Ban a member.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">ban @user Raid"] }],
+      ["unban <user_id> [reason]", "Unban a user by ID", { how: "Lift a ban by ID.", args: [["<user_id>", "ID.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">unban 123456789"] }],
+      ["softban <member> [reason]", "Ban then unban to purge messages", { how: "Softban.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">softban @user"] }],
+      ["tempban <member> <duration> [reason]", "Temporary ban", { how: "Temp ban.", args: [["<member>", "Target.", "required"], ["<duration>", "Duration.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">tempban @user 1d"] }],
+      ["banlist", "List banned users", { how: "List bans.", ex: [">banlist"] }],
+      ["timeout <member> <duration> [reason]", "Timeout a member", { how: "Timeout.", args: [["<member>", "Target.", "required"], ["<duration>", "Duration.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">timeout @user 1h"] }],
+      ["untimeout <member>", "Remove a timeout", { how: "Remove timeout.", args: [["<member>", "Target.", "required"]], ex: [">untimeout @user"] }],
+      ["warn <member> [reason]", "Warn a member", { how: "Warn.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">warn @user"] }],
+      ["warnings <member>", "List warnings for a member", { how: "List warnings.", args: [["<member>", "Target.", "required"]], ex: [">warnings @user"] }],
+      ["delwarn <member> <index>", "Delete a specific warning", { how: "Delete warning.", args: [["<member>", "Target.", "required"], ["<index>", "#", "required"]], ex: [">delwarn @user 1"] }],
+      ["clearwarnings <member>", "Clear all warnings", { how: "Clear warnings.", args: [["<member>", "Target.", "required"]], ex: [">clearwarnings @user"] }],
+      ["slowmode <duration> [channel]", "Set slowmode (0 to disable)", { how: "Slowmode.", args: [["<duration>", "Duration.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">slowmode 30s"] }],
+      ["lock [channel]", "Lock a channel", { how: "Lock channel.", args: [["[channel]", "Channel.", "optional"]], ex: [">lock"] }],
+      ["unlock [channel]", "Unlock a channel", { how: "Unlock channel.", args: [["[channel]", "Channel.", "optional"]], ex: [">unlock"] }],
+      ["hide [channel]", "Hide a channel", { how: "Hide channel.", args: [["[channel]", "Channel.", "optional"]], ex: [">hide"] }],
+      ["unhide [channel]", "Unhide a channel", { how: "Unhide channel.", args: [["[channel]", "Channel.", "optional"]], ex: [">unhide"] }],
+      ["lockall", "Lock every text channel", { how: "Lock all.", ex: [">lockall"] }],
+      ["unlockall", "Unlock every text channel", { how: "Unlock all.", ex: [">unlockall"] }],
+      ["purgechannel [channel]", "Delete and recreate a channel", { how: "Recreate channel.", args: [["[channel]", "Channel.", "optional"]], ex: [">purgechannel"] }],
+      ["nuke [channel]", "Alias for purgechannel", { how: "Alias.", ex: [">nuke"] }],
+      ["topic <text>", "Set a channel topic", { how: "Set topic.", args: [["<text>", "Topic.", "required"]], ex: [">topic Welcome"] }],
+      ["rename <name> [channel]", "Rename a channel", { how: "Rename channel.", args: [["<name>", "Name.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">rename chat"] }],
+      ["nick <member> [nickname]", "Change a member's nickname", { how: "Set nick.", args: [["<member>", "Target.", "required"], ["[nickname]", "Nick.", "optional"]], ex: [">nick @user Cool"] }],
+      ["resetnick <member>", "Reset a member's nickname", { how: "Reset nick.", args: [["<member>", "Target.", "required"]], ex: [">resetnick @user"] }],
+      ["addrole <member> <role>", "Add a role to a member", { how: "Add role.", args: [["<member>", "Target.", "required"], ["<role>", "Role.", "required"]], ex: [">addrole @user Verified"] }],
+      ["removerole <member> <role>", "Remove a role from a member", { how: "Remove role.", args: [["<member>", "Target.", "required"], ["<role>", "Role.", "required"]], ex: [">removerole @user Muted"] }],
+      ["rolecreate <name> [color]", "Create a role", { how: "Create role.", args: [["<name>", "Name.", "required"], ["[color]", "Hex.", "optional"]], ex: [">rolecreate VIP #ffaa00"] }],
+      ["roledelete <role>", "Delete a role", { how: "Delete role.", args: [["<role>", "Role.", "required"]], ex: [">roledelete VIP"] }],
+      ["rolecolor <role> <color>", "Change a role's color", { how: "Role color.", args: [["<role>", "Role.", "required"], ["<color>", "Hex.", "required"]], ex: [">rolecolor VIP #ffaa00"] }],
+      ["dm <member> <message>", "DM a member", { how: "DM.", args: [["<member>", "Target.", "required"], ["<message>", "Text.", "required"]], ex: [">dm @user Hello"] }],
+      ["say <text>", "Make the bot say something", { how: "Echo.", args: [["<text>", "Text.", "required"]], ex: [">say Hi"] }],
+      ["embed <title> <description>", "Send a quick embed", { how: "Embed.", args: [["<title>", "Title.", "required"], ["<description>", "Body.", "required"]], ex: [">embed Hi Hello"] }],
+      ["poll <question>", "Yes/no poll", { how: "Poll.", args: [["<question>", "Question.", "required"]], ex: [">poll Pizza?"] }],
+      ["raidmode", "Toggle raid mode", { how: "Toggle raid mode.", ex: [">raidmode"] }],
+      ["slogs", "Toggle message logging", { how: "Toggle logging.", ex: [">slogs"] }],
+      ["checkbg <user>", "Full background check", { how: "Background check.", args: [["<user>", "Target.", "required"]], ex: [">checkbg @user"] }],
+      ["vhistory <user>", "Browse log threads", { how: "Browse logs.", args: [["<user>", "Target.", "required"]], ex: [">vhistory @user"] }],
+      ["mhistory <user>", "Message history", { how: "Messages.", args: [["<user>", "Target.", "required"]], ex: [">mhistory @user"] }],
+      ["rhistory <user>", "Deleted message history", { how: "Deletes.", args: [["<user>", "Target.", "required"]], ex: [">rhistory @user"] }],
+      ["ehistory <user>", "Edit history", { how: "Edits.", args: [["<user>", "Target.", "required"]], ex: [">ehistory @user"] }],
+      ["history <user>", "Moderation history", { how: "Mod history.", args: [["<user>", "Target.", "required"]], ex: [">history @user"] }],
+      ["note <user> <text>", "Add a note", { how: "Add note.", args: [["<user>", "Target.", "required"], ["<text>", "Note.", "required"]], ex: [">note @user Watch"] }],
+      ["notes <user>", "List notes", { how: "Notes.", args: [["<user>", "Target.", "required"]], ex: [">notes @user"] }],
+      ["delnote <user> <index>", "Delete a note", { how: "Delete note.", args: [["<user>", "Target.", "required"], ["<index>", "#", "required"]], ex: [">delnote @user 1"] }],
+      ["clearnotes <user>", "Clear notes", { how: "Clear notes.", args: [["<user>", "Target.", "required"]], ex: [">clearnotes @user"] }],
+      ["watch <user> <reason>", "Add to watchlist", { how: "Add watch.", args: [["<user>", "Target.", "required"], ["<reason>", "Reason.", "required"]], ex: [">watch @user Sus"] }],
+      ["unwatch <user>", "Remove from watchlist", { how: "Remove watch.", args: [["<user>", "Target.", "required"]], ex: [">unwatch @user"] }],
+      ["watchlist", "List watchlist", { how: "Watchlist.", ex: [">watchlist"] }],
+      ["quickwarn <user> <reason>", "Warn + DM", { how: "Warn+DM.", args: [["<user>", "Target.", "required"], ["<reason>", "Reason.", "required"]], ex: [">quickwarn @user Be nice"] }],
+      ["purgeuserall <user>", "Purge everywhere", { how: "Purge everywhere.", args: [["<user>", "Target.", "required"]], ex: [">purgeuserall @user"] }],
+      ["masskick <users...>", "Kick multiple", { how: "Mass kick.", args: [["<users...>", "Two or more.", "required"]], ex: [">masskick @a @b"] }],
+      ["massban <users...>", "Ban multiple", { how: "Mass ban.", args: [["<users...>", "Two or more.", "required"]], ex: [">massban @a @b"] }],
+      ["softbanall <users...>", "Softban multiple", { how: "Mass softban.", args: [["<users...>", "Two or more.", "required"]], ex: [">softbanall @a @b"] }],
+      ["lockuser <user> <channel>", "Deny send in a channel", { how: "Per-user lock.", args: [["<user>", "Target.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">lockuser @user #general"] }],
+      ["unlockuser <user> <channel>", "Restore send in a channel", { how: "Per-user unlock.", args: [["<user>", "Target.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">unlockuser @user #general"] }],
+      ["recentjoins [count]", "Newest members", { how: "Recent joins.", args: [["[count]", "Count.", "optional"]], ex: [">recentjoins"] }],
+      ["newaccounts [days]", "Newest accounts", { how: "New accounts.", args: [["[days]", "Days.", "optional"]], ex: [">newaccounts"] }],
+      ["joinposition <user>", "Join position", { how: "Join position.", args: [["<user>", "Target.", "required"]], ex: [">joinposition @user"] }],
+      ["rolecount <role>", "Count with role", { how: "Role count.", args: [["<role>", "Role.", "required"]], ex: [">rolecount Verified"] }],
+      ["perms <user>", "Key permissions", { how: "Perms.", args: [["<user>", "Target.", "required"]], ex: [">perms @user"] }]
+    ]
+  },
+  {
+    name: "Moderators", color: "#d4b44a", soft: "#f4ecc9",
+    commands: [
+      ["purge <amount>", "Delete recent messages", { how: "Bulk delete.", args: [["<amount>", "1-1000.", "required"]], ex: [">purge 25"] }],
+      ["purgeuser <user> [amount]", "Delete messages from a user", { how: "Delete user messages.", args: [["<user>", "Target.", "required"], ["[amount]", "Scan.", "optional"]], ex: [">purgeuser @user"] }],
+      ["purgebots [amount]", "Delete bot messages", { how: "Delete bot messages.", args: [["[amount]", "Scan.", "optional"]], ex: [">purgebots"] }],
+      ["purgecontains <text>", "Delete messages containing a string", { how: "Delete by substring.", args: [["<text>", "Substring.", "required"]], ex: [">purgecontains scam"] }],
+      ["purgeembeds [amount]", "Delete messages with embeds", { how: "Delete embeds.", args: [["[amount]", "Scan.", "optional"]], ex: [">purgeembeds"] }],
+      ["purgeattachments [amount]", "Delete messages with attachments", { how: "Delete attachments.", args: [["[amount]", "Scan.", "optional"]], ex: [">purgeattachments"] }],
+      ["kick <member> [reason]", "Kick a member", { how: "Kick.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">kick @user Spam"] }],
+      ["ban <member> [reason]", "Ban a member", { how: "Ban.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">ban @user Raid"] }],
+      ["unban <user_id> [reason]", "Unban a user by ID", { how: "Unban.", args: [["<user_id>", "ID.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">unban 123456789"] }],
+      ["softban <member> [reason]", "Ban then unban to purge messages", { how: "Softban.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">softban @user"] }],
+      ["tempban <member> <duration> [reason]", "Temporary ban", { how: "Temp ban.", args: [["<member>", "Target.", "required"], ["<duration>", "Duration.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">tempban @user 1d"] }],
+      ["banlist", "List banned users", { how: "List bans.", ex: [">banlist"] }],
+      ["timeout <member> <duration> [reason]", "Timeout a member", { how: "Timeout.", args: [["<member>", "Target.", "required"], ["<duration>", "Duration.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">timeout @user 1h"] }],
+      ["untimeout <member>", "Remove a timeout", { how: "Remove timeout.", args: [["<member>", "Target.", "required"]], ex: [">untimeout @user"] }],
+      ["warn <member> [reason]", "Warn a member", { how: "Warn.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">warn @user"] }],
+      ["warnings <member>", "List warnings for a member", { how: "Warnings.", args: [["<member>", "Target.", "required"]], ex: [">warnings @user"] }],
+      ["delwarn <member> <index>", "Delete a specific warning", { how: "Delete warning.", args: [["<member>", "Target.", "required"], ["<index>", "#", "required"]], ex: [">delwarn @user 1"] }],
+      ["slowmode <duration> [channel]", "Set slowmode (0 to disable)", { how: "Slowmode.", args: [["<duration>", "Duration.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">slowmode 30s"] }],
+      ["lock [channel]", "Lock a channel", { how: "Lock.", args: [["[channel]", "Channel.", "optional"]], ex: [">lock"] }],
+      ["unlock [channel]", "Unlock a channel", { how: "Unlock.", args: [["[channel]", "Channel.", "optional"]], ex: [">unlock"] }],
+      ["hide [channel]", "Hide a channel", { how: "Hide.", args: [["[channel]", "Channel.", "optional"]], ex: [">hide"] }],
+      ["unhide [channel]", "Unhide a channel", { how: "Unhide.", args: [["[channel]", "Channel.", "optional"]], ex: [">unhide"] }],
+      ["purgechannel [channel]", "Delete and recreate a channel", { how: "Recreate.", args: [["[channel]", "Channel.", "optional"]], ex: [">purgechannel"] }],
+      ["nuke [channel]", "Alias for purgechannel", { how: "Alias.", ex: [">nuke"] }],
+      ["topic <text>", "Set a channel topic", { how: "Topic.", args: [["<text>", "Topic.", "required"]], ex: [">topic Welcome"] }],
+      ["rename <name> [channel]", "Rename a channel", { how: "Rename.", args: [["<name>", "Name.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">rename chat"] }],
+      ["nick <member> [nickname]", "Change a member's nickname", { how: "Set nick.", args: [["<member>", "Target.", "required"], ["[nickname]", "Nick.", "optional"]], ex: [">nick @user Cool"] }],
+      ["resetnick <member>", "Reset a member's nickname", { how: "Reset nick.", args: [["<member>", "Target.", "required"]], ex: [">resetnick @user"] }],
+      ["addrole <member> <role>", "Add a role to a member", { how: "Add role.", args: [["<member>", "Target.", "required"], ["<role>", "Role.", "required"]], ex: [">addrole @user Verified"] }],
+      ["removerole <member> <role>", "Remove a role from a member", { how: "Remove role.", args: [["<member>", "Target.", "required"], ["<role>", "Role.", "required"]], ex: [">removerole @user Muted"] }],
+      ["dm <member> <message>", "DM a member", { how: "DM.", args: [["<member>", "Target.", "required"], ["<message>", "Text.", "required"]], ex: [">dm @user Hi"] }],
+      ["say <text>", "Make the bot say something", { how: "Echo.", args: [["<text>", "Text.", "required"]], ex: [">say Hi"] }],
+      ["embed <title> <description>", "Send a quick embed", { how: "Embed.", args: [["<title>", "Title.", "required"], ["<description>", "Body.", "required"]], ex: [">embed Hi Hello"] }],
+      ["poll <question>", "Yes/no poll", { how: "Poll.", args: [["<question>", "Question.", "required"]], ex: [">poll Pizza?"] }],
+      ["checkbg <user>", "Full background check", { how: "BG check.", args: [["<user>", "Target.", "required"]], ex: [">checkbg @user"] }],
+      ["vhistory <user>", "Browse log threads", { how: "Logs.", args: [["<user>", "Target.", "required"]], ex: [">vhistory @user"] }],
+      ["mhistory <user>", "Message history", { how: "Messages.", args: [["<user>", "Target.", "required"]], ex: [">mhistory @user"] }],
+      ["rhistory <user>", "Deleted message history", { how: "Deletes.", args: [["<user>", "Target.", "required"]], ex: [">rhistory @user"] }],
+      ["ehistory <user>", "Edit history", { how: "Edits.", args: [["<user>", "Target.", "required"]], ex: [">ehistory @user"] }],
+      ["history <user>", "Moderation history", { how: "Mod history.", args: [["<user>", "Target.", "required"]], ex: [">history @user"] }],
+      ["note <user> <text>", "Add a note", { how: "Add note.", args: [["<user>", "Target.", "required"], ["<text>", "Note.", "required"]], ex: [">note @user Watch"] }],
+      ["notes <user>", "List notes", { how: "Notes.", args: [["<user>", "Target.", "required"]], ex: [">notes @user"] }],
+      ["delnote <user> <index>", "Delete a note", { how: "Delete note.", args: [["<user>", "Target.", "required"], ["<index>", "#", "required"]], ex: [">delnote @user 1"] }],
+      ["watch <user> <reason>", "Add to watchlist", { how: "Add watch.", args: [["<user>", "Target.", "required"], ["<reason>", "Reason.", "required"]], ex: [">watch @user Sus"] }],
+      ["unwatch <user>", "Remove from watchlist", { how: "Remove watch.", args: [["<user>", "Target.", "required"]], ex: [">unwatch @user"] }],
+      ["watchlist", "List watchlist", { how: "Watchlist.", ex: [">watchlist"] }],
+      ["quickwarn <user> <reason>", "Warn + DM", { how: "Warn+DM.", args: [["<user>", "Target.", "required"], ["<reason>", "Reason.", "required"]], ex: [">quickwarn @user Be nice"] }],
+      ["lockuser <user> <channel>", "Deny send in a channel", { how: "Per-user lock.", args: [["<user>", "Target.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">lockuser @user #general"] }],
+      ["unlockuser <user> <channel>", "Restore send in a channel", { how: "Per-user unlock.", args: [["<user>", "Target.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">unlockuser @user #general"] }],
+      ["recentjoins [count]", "Newest members", { how: "Recent joins.", args: [["[count]", "Count.", "optional"]], ex: [">recentjoins"] }],
+      ["newaccounts [days]", "Newest accounts", { how: "New accounts.", args: [["[days]", "Days.", "optional"]], ex: [">newaccounts"] }],
+      ["joinposition <user>", "Join position", { how: "Join position.", args: [["<user>", "Target.", "required"]], ex: [">joinposition @user"] }],
+      ["rolecount <role>", "Count with role", { how: "Role count.", args: [["<role>", "Role.", "required"]], ex: [">rolecount Verified"] }],
+      ["perms <user>", "Key permissions", { how: "Perms.", args: [["<user>", "Target.", "required"]], ex: [">perms @user"] }]
+    ]
+  },
+  {
+    name: "Trial Mods", color: "#7bb87b", soft: "#d9ecd9",
+    commands: [
+      ["purge <amount>", "Delete recent messages", { how: "Bulk delete.", args: [["<amount>", "1-1000.", "required"]], ex: [">purge 25"] }],
+      ["purgeuser <user> [amount]", "Delete messages from a user", { how: "Delete user messages.", args: [["<user>", "Target.", "required"], ["[amount]", "Scan.", "optional"]], ex: [">purgeuser @user"] }],
+      ["purgebots [amount]", "Delete bot messages", { how: "Delete bot messages.", args: [["[amount]", "Scan.", "optional"]], ex: [">purgebots"] }],
+      ["purgeembeds [amount]", "Delete messages with embeds", { how: "Delete embeds.", args: [["[amount]", "Scan.", "optional"]], ex: [">purgeembeds"] }],
+      ["timeout <member> <duration> [reason]", "Timeout a member", { how: "Timeout.", args: [["<member>", "Target.", "required"], ["<duration>", "Duration.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">timeout @user 1h"] }],
+      ["untimeout <member>", "Remove a timeout", { how: "Remove timeout.", args: [["<member>", "Target.", "required"]], ex: [">untimeout @user"] }],
+      ["warn <member> [reason]", "Warn a member", { how: "Warn.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">warn @user"] }],
+      ["warnings <member>", "List warnings for a member", { how: "Warnings.", args: [["<member>", "Target.", "required"]], ex: [">warnings @user"] }],
+      ["slowmode <duration> [channel]", "Set slowmode (0 to disable)", { how: "Slowmode.", args: [["<duration>", "Duration.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">slowmode 30s"] }],
+      ["lock [channel]", "Lock a channel", { how: "Lock.", args: [["[channel]", "Channel.", "optional"]], ex: [">lock"] }],
+      ["unlock [channel]", "Unlock a channel", { how: "Unlock.", args: [["[channel]", "Channel.", "optional"]], ex: [">unlock"] }],
+      ["hide [channel]", "Hide a channel", { how: "Hide.", args: [["[channel]", "Channel.", "optional"]], ex: [">hide"] }],
+      ["unhide [channel]", "Unhide a channel", { how: "Unhide.", args: [["[channel]", "Channel.", "optional"]], ex: [">unhide"] }],
+      ["nick <member> [nickname]", "Change a member's nickname", { how: "Nick.", args: [["<member>", "Target.", "required"], ["[nickname]", "Nick.", "optional"]], ex: [">nick @user Cool"] }],
+      ["say <text>", "Make the bot say something", { how: "Echo.", args: [["<text>", "Text.", "required"]], ex: [">say Hi"] }],
+      ["checkbg <user>", "Full background check", { how: "BG check.", args: [["<user>", "Target.", "required"]], ex: [">checkbg @user"] }],
+      ["vhistory <user>", "Browse log threads", { how: "Logs.", args: [["<user>", "Target.", "required"]], ex: [">vhistory @user"] }],
+      ["mhistory <user>", "Message history", { how: "Messages.", args: [["<user>", "Target.", "required"]], ex: [">mhistory @user"] }],
+      ["rhistory <user>", "Deleted message history", { how: "Deletes.", args: [["<user>", "Target.", "required"]], ex: [">rhistory @user"] }],
+      ["ehistory <user>", "Edit history", { how: "Edits.", args: [["<user>", "Target.", "required"]], ex: [">ehistory @user"] }],
+      ["history <user>", "Moderation history", { how: "Mod history.", args: [["<user>", "Target.", "required"]], ex: [">history @user"] }],
+      ["notes <user>", "List notes", { how: "Notes.", args: [["<user>", "Target.", "required"]], ex: [">notes @user"] }],
+      ["quickwarn <user> <reason>", "Warn + DM", { how: "Warn+DM.", args: [["<user>", "Target.", "required"], ["<reason>", "Reason.", "required"]], ex: [">quickwarn @user Be nice"] }],
+      ["created <user>", "Account creation", { how: "Account created date.", args: [["<user>", "Target.", "required"]], ex: [">created @user"] }],
+      ["joined <user>", "Server join", { how: "Join date.", args: [["<user>", "Target.", "required"]], ex: [">joined @user"] }],
+      ["joinposition <user>", "Join position", { how: "Join position.", args: [["<user>", "Target.", "required"]], ex: [">joinposition @user"] }]
+    ]
+  },
+  {
+    name: "Staff", color: "#6fa3d9", soft: "#d6e4f4",
+    commands: [
+      ["purge <amount>", "Delete recent messages", { how: "Bulk delete.", args: [["<amount>", "1-1000.", "required"]], ex: [">purge 25"] }],
+      ["purgebots [amount]", "Delete bot messages", { how: "Delete bot messages.", args: [["[amount]", "Scan.", "optional"]], ex: [">purgebots"] }],
+      ["warn <member> [reason]", "Warn a member", { how: "Warn.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">warn @user"] }],
+      ["warnings <member>", "List warnings for a member", { how: "Warnings.", args: [["<member>", "Target.", "required"]], ex: [">warnings @user"] }],
+      ["slowmode <duration> [channel]", "Set slowmode (0 to disable)", { how: "Slowmode.", args: [["<duration>", "Duration.", "required"], ["[channel]", "Channel.", "optional"]], ex: [">slowmode 30s"] }],
+      ["lock [channel]", "Lock a channel", { how: "Lock.", args: [["[channel]", "Channel.", "optional"]], ex: [">lock"] }],
+      ["unlock [channel]", "Unlock a channel", { how: "Unlock.", args: [["[channel]", "Channel.", "optional"]], ex: [">unlock"] }],
+      ["say <text>", "Make the bot say something", { how: "Echo.", args: [["<text>", "Text.", "required"]], ex: [">say Hi"] }],
+      ["poll <question>", "Yes/no poll", { how: "Poll.", args: [["<question>", "Question.", "required"]], ex: [">poll Movie night?"] }],
+      ["checkbg <user>", "Full background check", { how: "BG check.", args: [["<user>", "Target.", "required"]], ex: [">checkbg @user"] }],
+      ["vhistory <user>", "Browse log threads", { how: "Logs.", args: [["<user>", "Target.", "required"]], ex: [">vhistory @user"] }],
+      ["mhistory <user>", "Message history", { how: "Messages.", args: [["<user>", "Target.", "required"]], ex: [">mhistory @user"] }],
+      ["history <user>", "Moderation history", { how: "Mod history.", args: [["<user>", "Target.", "required"]], ex: [">history @user"] }]
+    ]
+  },
+  {
+    name: "Helpers", color: "#a583d1", soft: "#e6dcf3",
+    commands: [
+      ["warn <member> [reason]", "Warn a member", { how: "Warn.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">warn @user"] }],
+      ["warnings <member>", "List warnings for a member", { how: "Warnings.", args: [["<member>", "Target.", "required"]], ex: [">warnings @user"] }],
+      ["say <text>", "Make the bot say something", { how: "Echo.", args: [["<text>", "Text.", "required"]], ex: [">say Hi"] }],
+      ["poll <question>", "Yes/no poll", { how: "Poll.", args: [["<question>", "Question.", "required"]], ex: [">poll Pizza?"] }],
+      ["serverinfo", "Info about this server", { how: "Server details.", ex: [">serverinfo"] }],
+      ["userinfo", "Info about a user", { how: "User details.", args: [["[user]", "Default: you.", "optional"]], ex: [">userinfo @user"] }],
+      ["channelinfo", "Info about a channel", { how: "Channel details.", args: [["[channel]", "Default: current.", "optional"]], ex: [">channelinfo #general"] }],
+      ["roleinfo", "Info about a role", { how: "Role details.", args: [["<role>", "Role.", "required"]], ex: [">roleinfo Verified"] }]
+    ]
+  },
+  {
+    name: "Members", color: "#96908a", soft: "#e5e1dc",
+    commands: [
+      ["ping", "Check bot latency", { how: "Shows round-trip latency.", ex: [">ping"] }],
+      ["serverinfo", "Info about this server", { how: "Server facts.", ex: [">serverinfo"] }],
+      ["userinfo", "Info about a user", { how: "User facts.", args: [["[user]", "Default: you.", "optional"]], ex: [">userinfo"] }],
+      ["avatar", "Show a user's avatar", { how: "Direct URL to avatar.", args: [["[user]", "Default: you.", "optional"]], ex: [">avatar @user"] }],
+      ["banner", "Show a user's banner", { how: "Direct URL to banner.", args: [["[user]", "Default: you.", "optional"]], ex: [">banner @user"] }],
+      ["roleinfo", "Info about a role", { how: "Role facts.", args: [["<role>", "Role.", "required"]], ex: [">roleinfo Verified"] }],
+      ["channelinfo", "Info about a channel", { how: "Channel facts.", args: [["[channel]", "Default: current.", "optional"]], ex: [">channelinfo"] }],
+      ["uptime", "Show bot uptime", { how: "Bot online duration.", ex: [">uptime"] }],
+      ["help", "Show your personal command list", { how: "Shows your commands in Discord.", ex: [">help"] }],
+      ["roll", "Roll dice (e.g. 2d20)", { how: "Roll NdN dice.", args: [["[dice]", "Format NdN. Default 1d6.", "optional"]], ex: [">roll 2d20"] }],
+      ["coinflip", "Flip a coin", { how: "Heads or Tails.", ex: [">coinflip"] }],
+      ["8ball", "Ask the magic 8-ball", { how: "Random answer.", args: [["<question>", "Question.", "required"]], ex: [">8ball Will it rain?"] }]
+    ]
+  }
+];
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const state = {
+  query: "",
+  activeRoles: new Set(),
+  favoritesOnly: false,
+  favorites: new Set(JSON.parse(localStorage.getItem("cmdFavs") || "[]")),
+  theme: localStorage.getItem("cmdTheme") || "light",
+  sort: "default",
+  collapseOthers: false,
+  activeProfile: null
+};
+
+let USAGE_CACHE = {};
+let MEMBERS_CACHE = null;
+
+/* ============================================================
+   SUPABASE FETCH
+   ============================================================ */
+async function supaFetch(path) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+    }
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+  return res.json();
+}
+
+async function fetchUsage() {
+  try {
+    const rows = await supaFetch("command_usage?select=command_name,count");
+    USAGE_CACHE = {};
+    rows.forEach(r => { USAGE_CACHE[r.command_name] = r.count; });
+  } catch (e) {
+    console.warn("[usage] fetch failed", e);
+  }
+}
+
+async function loadMembers() {
+  if (MEMBERS_CACHE) return MEMBERS_CACHE;
+  try {
+    const rows = await supaFetch("members?select=user_id,username,display_name,avatar_url,banner_url,bio,roles,joined_at,created_at");
+    MEMBERS_CACHE = rows;
+    return rows;
+  } catch (e) {
+    console.warn("[members] fetch failed", e);
+    MEMBERS_CACHE = [];
+    return [];
+  }
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+document.documentElement.setAttribute("data-theme", state.theme);
+updateThemeIcon();
+
+const rolesEl = document.getElementById("roles");
+const filtersEl = document.getElementById("filters");
+const searchInput = document.getElementById("searchInput");
+const searchWrap = document.getElementById("searchWrap");
+const searchClear = document.getElementById("searchClear");
+const resultsMeta = document.getElementById("resultsMeta");
+const noResults = document.getElementById("noResults");
+const statRoles = document.getElementById("statRoles");
+const statCmds = document.getElementById("statCmds");
+const statCmdsTotal = document.getElementById("statCmdsTotal");
+const statFavs = document.getElementById("statFavs");
+
+const profilePanel = document.getElementById("profilePanel");
+const profileBackdrop = document.getElementById("profileBackdrop");
+const profileContent = document.getElementById("profileContent");
+const profileClose = document.getElementById("profileClose");
+
+/* ============================================================
+   RENDER ROLES
+   ============================================================ */
+let totalCommands = 0;
+const uniqueCommands = new Set();
+
+ROLES.forEach((role, i) => {
+  totalCommands += role.commands.length;
+  role.commands.forEach(c => {
+    const base = c[0].split(" ")[0].replace(/[<>\[\]]/g, "");
+    uniqueCommands.add(base);
+  });
+
+  const el = document.createElement("div");
+  el.className = "role";
+  el.dataset.roleName = role.name;
+  el.style.setProperty("--role-color", role.color);
+  el.style.setProperty("--role-color-soft", role.soft);
+  el.style.setProperty("--i", i);
+
+  const initial = role.name.charAt(0).toUpperCase();
+
+  const header = document.createElement("div");
+  header.className = "role-header";
+  header.innerHTML = `
+    <div class="role-left">
+      <div class="badge">${initial}</div>
+      <span class="role-name">${role.name}</span>
+      <span class="count">${role.commands.length}</span>
+    </div>
+    <div class="role-actions">
+      <button class="mini-btn expand-role-btn" title="Expand all in this role">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
+      </button>
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </div>
+  `;
+
+  const body = document.createElement("div");
+  body.className = "role-body";
+  const bodyInner = document.createElement("div");
+  bodyInner.className = "role-body-inner";
+  const list = document.createElement("div");
+  list.className = "cmd-list";
+
+  role.commands.forEach((cmdArr, j) => {
+    const [syntax, short, docs] = cmdArr;
+    const wrap = document.createElement("div");
+    wrap.className = "cmd-wrap";
+    wrap.style.setProperty("--j", j);
+    wrap.dataset.syntax = syntax.toLowerCase();
+    wrap.dataset.short = short.toLowerCase();
+    wrap.dataset.role = role.name;
+
+    const favKey = `${role.name}::${syntax}`;
+    wrap.dataset.favKey = favKey;
+
+    if (state.favorites.has(favKey)) wrap.classList.add("favorite");
+
+    const row = document.createElement("div");
+    row.className = "cmd";
+    row.innerHTML = `
+      <code>&gt;${escapeHtml(syntax)}</code>
+      <span class="cmd-desc">${escapeHtml(short)}</span>
+      <button class="fav-btn" title="Favorite">
+        <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+      </button>
+      ${docs ? `<svg class="cmd-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg>` : ""}
+    `;
+
+    wrap.appendChild(row);
+
+    if (docs) {
+      const docsEl = document.createElement("div");
+      docsEl.className = "docs";
+      const docsInner = document.createElement("div");
+      docsInner.className = "docs-inner";
+      const docsContent = document.createElement("div");
+      docsContent.className = "docs-content";
+      docsContent.innerHTML = buildDocs(docs, syntax);
+      docsInner.appendChild(docsContent);
+      docsEl.appendChild(docsInner);
+      wrap.appendChild(docsEl);
+
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".fav-btn")) return;
+        e.stopPropagation();
+        wrap.classList.toggle("open");
+      });
+    }
+
+    const favBtn = row.querySelector(".fav-btn");
+    favBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFavorite(favKey, wrap);
+    });
+
+    list.appendChild(wrap);
+  });
+
+  bodyInner.appendChild(list);
+  body.appendChild(bodyInner);
+  el.appendChild(header);
+  el.appendChild(body);
+
+  header.addEventListener("click", (e) => {
+    if (e.target.closest(".expand-role-btn")) return;
+    if (state.collapseOthers && !el.classList.contains("open")) {
+      rolesEl.querySelectorAll(".role.open").forEach(r => {
+        if (r !== el) r.classList.remove("open");
+      });
+    }
+    el.classList.toggle("open");
+  });
+
+  header.querySelector(".expand-role-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    el.classList.toggle("open");
+    const open = el.classList.contains("open");
+    list.querySelectorAll(".cmd-wrap").forEach(w => {
+      if (w.querySelector(".docs")) {
+        w.classList.toggle("open", open);
+      }
+    });
+  });
+
+  rolesEl.appendChild(el);
+});
+
+statRoles.textContent = ROLES.length;
+statCmds.textContent = uniqueCommands.size;
+statCmdsTotal.textContent = `(${totalCommands} total)`;
+updateFavCount();
+
+/* ============================================================
+   SEARCH
+   ============================================================ */
+searchInput.addEventListener("input", async () => {
+  const raw = searchInput.value.trim();
+  state.query = raw.toLowerCase();
+  searchClear.classList.toggle("visible", state.query.length > 0);
+
+  const handled = await maybeLookupUser(raw);
+  if (!handled) {
+    applyFilters();
+  }
+});
+
+searchInput.addEventListener("focus", () => searchWrap.classList.add("focused"));
+searchInput.addEventListener("blur", () => searchWrap.classList.remove("focused"));
+
+searchClear.addEventListener("click", () => {
+  searchInput.value = "";
+  state.query = "";
+  searchClear.classList.remove("visible");
+  applyFilters();
+  searchInput.focus();
+});
+
+/* ============================================================
+   ROLE FILTERS
+   ============================================================ */
+ROLES.forEach((role) => {
+  const chip = document.createElement("button");
+  chip.className = "filter-chip";
+  chip.dataset.role = role.name;
+  chip.style.setProperty("--chip-color", role.color);
+  chip.style.setProperty("--chip-color-soft", role.soft);
+  chip.innerHTML = `<span class="chip-dot"></span>${role.name}<span class="chip-count">${role.commands.length}</span>`;
+
+  chip.addEventListener("click", () => {
+    if (state.activeRoles.has(role.name)) {
+      state.activeRoles.delete(role.name);
+      chip.classList.remove("active");
+    } else {
+      state.activeRoles.add(role.name);
+      chip.classList.add("active");
+    }
+    applyFilters();
+  });
+
+  filtersEl.appendChild(chip);
+});
+
+const sortBtn = document.createElement("button");
+sortBtn.className = "sort-toggle";
+sortBtn.innerHTML = `Sort: Default`;
+sortBtn.addEventListener("click", () => {
+  const order = ["default", "az", "za"];
+  const idx = order.indexOf(state.sort);
+  state.sort = order[(idx + 1) % order.length];
+  sortBtn.innerHTML = `Sort: ${state.sort === "default" ? "Default" : state.sort === "az" ? "A → Z" : "Z → A"}`;
+  applyFilters();
+});
+filtersEl.appendChild(sortBtn);
+
+/* ============================================================
+   FUZZY SEARCH
+   ============================================================ */
+function fuzzyMatch(needle, haystack) {
+  if (!needle) return true;
+  let ni = 0;
+  for (let hi = 0; hi < haystack.length && ni < needle.length; hi++) {
+    if (haystack[hi] === needle[ni]) ni++;
+  }
+  return ni === needle.length;
+}
+
+/* ============================================================
+   FILTER LOGIC
+   ============================================================ */
+function applyFilters() {
+  const q = state.query;
+  let totalVisible = 0;
+  const roleEls = Array.from(rolesEl.children);
+
+  roleEls.forEach(roleEl => {
+    const roleName = roleEl.dataset.roleName;
+    const roleFiltered = state.activeRoles.size === 0 || state.activeRoles.has(roleName);
+    const cmdWraps = Array.from(roleEl.querySelectorAll(".cmd-wrap"));
+    let roleVisible = 0;
+
+    cmdWraps.forEach(wrap => {
+      const syntax = wrap.dataset.syntax;
+      const short = wrap.dataset.short;
+      const favMatch = !state.favoritesOnly || wrap.classList.contains("favorite");
+
+      let queryMatch = true;
+      if (q) {
+        if (q.startsWith("@")) {
+          const roleQuery = q.slice(1);
+          queryMatch = roleName.toLowerCase().includes(roleQuery);
+        } else {
+          queryMatch = syntax.includes(q) || short.includes(q) ||
+                       fuzzyMatch(q, syntax) || fuzzyMatch(q, short);
+        }
+      }
+
+      const show = roleFiltered && queryMatch && favMatch;
+
+      if (show) {
+        wrap.classList.remove("hidden");
+        highlightMatch(wrap, q);
+        roleVisible++;
+      } else {
+        wrap.classList.add("hidden");
+      }
+    });
+
+    if (roleVisible > 0 && (state.activeRoles.size === 0 || state.activeRoles.has(roleName)) && roleFiltered) {
+      roleEl.classList.remove("hidden");
+      totalVisible += roleVisible;
+      if ((q || state.activeRoles.size > 0 || state.favoritesOnly) && !roleEl.classList.contains("open")) {
+        roleEl.classList.add("open");
+      }
+    } else {
+      roleEl.classList.add("hidden");
+    }
+  });
+
+  noResults.classList.toggle("visible", totalVisible === 0);
+
+  if (q || state.activeRoles.size > 0 || state.favoritesOnly) {
+    resultsMeta.classList.remove("hidden");
+    const filters = [];
+    if (q) filters.push(`matching "<strong>${escapeHtml(state.query)}</strong>"`);
+    if (state.activeRoles.size > 0) filters.push(`in <strong>${Array.from(state.activeRoles).join(", ")}</strong>`);
+    if (state.favoritesOnly) filters.push(`in <strong>favorites</strong>`);
+    resultsMeta.innerHTML = `Showing <strong>${totalVisible}</strong> command${totalVisible === 1 ? "" : "s"} ${filters.join(" ")} <span class="clear-search" id="clearAllFilters">clear</span>`;
+    const clearAll = document.getElementById("clearAllFilters");
+    if (clearAll) {
+      clearAll.addEventListener("click", () => {
+        searchInput.value = "";
+        state.query = "";
+        searchClear.classList.remove("visible");
+        state.activeRoles.clear();
+        filtersEl.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+        state.favoritesOnly = false;
+        document.getElementById("favoritesBtn").classList.remove("active");
+        applyFilters();
+      });
+    }
+  } else {
+    resultsMeta.classList.add("hidden");
+  }
+
+  if (state.sort !== "default") {
+    roleEls.forEach(roleEl => {
+      const list = roleEl.querySelector(".cmd-list");
+      const wraps = Array.from(list.children);
+      wraps.sort((a, b) => {
+        const aS = a.dataset.syntax, bS = b.dataset.syntax;
+        return state.sort === "az" ? aS.localeCompare(bS) : bS.localeCompare(aS);
+      });
+      wraps.forEach(w => list.appendChild(w));
+    });
+  } else {
+    roleEls.forEach(roleEl => {
+      const list = roleEl.querySelector(".cmd-list");
+      const wraps = Array.from(list.children);
+      wraps.sort((a, b) => parseInt(a.style.getPropertyValue("--j") || 0) - parseInt(b.style.getPropertyValue("--j") || 0));
+      wraps.forEach(w => list.appendChild(w));
+    });
+  }
+}
+
+function highlightMatch(wrap, q) {
+  const descEl = wrap.querySelector(".cmd-desc");
+  const original = wrap.dataset.short;
+  if (!q || q.startsWith("@")) {
+    descEl.innerHTML = escapeHtml(original);
+    return;
+  }
+  const idx = original.toLowerCase().indexOf(q);
+  if (idx === -1) {
+    descEl.innerHTML = escapeHtml(original);
+    return;
+  }
+  const before = original.slice(0, idx);
+  const match = original.slice(idx, idx + q.length);
+  const after = original.slice(idx + q.length);
+  descEl.innerHTML = `${escapeHtml(before)}<mark>${escapeHtml(match)}</mark>${escapeHtml(after)}`;
+}
+
+/* ============================================================
+   FAVORITES
+   ============================================================ */
+function toggleFavorite(favKey, wrap) {
+  if (state.favorites.has(favKey)) {
+    state.favorites.delete(favKey);
+    wrap.classList.remove("favorite");
+  } else {
+    state.favorites.add(favKey);
+    wrap.classList.add("favorite");
+  }
+  localStorage.setItem("cmdFavs", JSON.stringify(Array.from(state.favorites)));
+  updateFavCount();
+  if (state.favoritesOnly) applyFilters();
+}
+
+function updateFavCount() {
+  statFavs.textContent = state.favorites.size;
+}
+
+document.getElementById("favoritesBtn").addEventListener("click", () => {
+  state.favoritesOnly = !state.favoritesOnly;
+  document.getElementById("favoritesBtn").classList.toggle("active", state.favoritesOnly);
+  applyFilters();
+});
+
+/* ============================================================
+   THEME
+   ============================================================ */
+function updateThemeIcon() {
+  const icon = document.getElementById("themeIcon");
+  if (state.theme === "dark") {
+    icon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>`;
+  } else {
+    icon.innerHTML = `<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>`;
+  }
+}
+
+document.getElementById("themeBtn").addEventListener("click", () => {
+  state.theme = state.theme === "light" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", state.theme);
+  localStorage.setItem("cmdTheme", state.theme);
+  updateThemeIcon();
+});
+
+/* ============================================================
+   COLLAPSE OTHERS
+   ============================================================ */
+document.getElementById("collapseBtn").addEventListener("click", () => {
+  state.collapseOthers = !state.collapseOthers;
+  document.getElementById("collapseBtn").classList.toggle("active", state.collapseOthers);
+});
+
+/* ============================================================
+   EXPAND ALL
+   ============================================================ */
+let allExpanded = false;
+document.getElementById("expandAllBtn").addEventListener("click", () => {
+  allExpanded = !allExpanded;
+  rolesEl.querySelectorAll(".role").forEach(r => {
+    if (allExpanded) r.classList.add("open");
+    else r.classList.remove("open");
+  });
+  rolesEl.querySelectorAll(".cmd-wrap").forEach(w => {
+    if (w.querySelector(".docs")) {
+      w.classList.toggle("open", allExpanded);
+    }
+  });
+});
+
+/* ============================================================
+   KEYBOARD
+   ============================================================ */
+document.addEventListener("keydown", (e) => {
+  const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(((document.activeElement || {}).tagName || ""));
+  const commandsVisible = !document.getElementById("view-commands").hidden;
+  if (e.key === "/" && !typing && commandsVisible && document.activeElement !== searchInput) {
+    e.preventDefault();
+    searchInput.focus();
+  }
+  if (e.key === "Escape") {
+    if (state.activeProfile) {
+      closeProfile();
+      return;
+    }
+    if (document.activeElement === searchInput) {
+      searchInput.value = "";
+      state.query = "";
+      searchClear.classList.remove("visible");
+      applyFilters();
+      searchInput.blur();
+    }
+  }
+  if (document.activeElement !== searchInput) {
+    const k = e.key.toLowerCase();
+    if (k === "d") document.getElementById("themeBtn").click();
+    if (k === "e") document.getElementById("expandAllBtn").click();
+    if (k === "f") document.getElementById("favoritesBtn").click();
+    if (k === "c") document.getElementById("collapseBtn").click();
+  }
+});
+
+/* ============================================================
+   SCROLL TOP
+   ============================================================ */
+const scrollTopBtn = document.getElementById("scrollTop");
+window.addEventListener("scroll", () => {
+  scrollTopBtn.classList.toggle("visible", window.scrollY > 400);
+}, { passive: true });
+scrollTopBtn.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+function escapeHtml(str) {
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function renderInlineCode(text) {
+  return escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+function highlightExample(line) {
+  let out = escapeHtml(line);
+  out = out.replace(/(&gt;)(\w+)/g, '<span class="tok-bot">$1</span><span class="tok-cmd">$2</span>');
+  out = out.replace(/(&lt;[^&]+&gt;)/g, '<span class="tok-arg">$1</span>');
+  out = out.replace(/(\[[^\]]+\])/g, '<span class="tok-opt">$1</span>');
+  return out;
+}
+
+function buildDocs(docs, syntax) {
+  const parts = [];
+
+  if (docs.how) parts.push(`<h4>How to Use</h4><p>${renderInlineCode(docs.how)}</p>`);
+
+  if (docs.args && docs.args.length) {
+    parts.push(`<h4>Arguments</h4><ul>`);
+    docs.args.forEach(([name, desc, kind]) => {
+      const tag = kind === "required" ? '<span class="label req">required</span>' : '<span class="label opt">optional</span>';
+      parts.push(`<li>${tag}<code>${escapeHtml(name)}</code> — ${renderInlineCode(desc)}</li>`);
+    });
+    parts.push(`</ul>`);
+  }
+
+  if (docs.ex && docs.ex.length) {
+    parts.push(`<h4>Examples</h4>`);
+    const html = docs.ex.map(highlightExample).join("\n");
+    parts.push(`<pre>${html}<button class="copy-btn" data-copy="${escapeHtml(docs.ex.join("\n"))}">Copy</button></pre>`);
+  }
+
+  if (docs.use) parts.push(`<h4>Use Case</h4><p>${renderInlineCode(docs.use)}</p>`);
+
+  if (docs.notes && docs.notes.length) {
+    parts.push(`<h4>Notes</h4><ul>`);
+    docs.notes.forEach(n => parts.push(`<li>${renderInlineCode(n)}</li>`));
+    parts.push(`</ul>`);
+  }
+
+  const base = syntax.split(" ")[0].replace(/[<>\[\]]/g, "");
+  const count = USAGE_CACHE[base] || 0;
+  parts.push(`<div class="run-count" data-cmd="${escapeHtml(base)}"><span class="pulse-dot"></span>Run count: ${count.toLocaleString()}</div>`);
+
+  return parts.join("");
+}
+
+/* ============================================================
+   COPY
+   ============================================================ */
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".copy-btn");
+  if (!btn) return;
+  e.stopPropagation();
+  const text = btn.dataset.copy;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = "Copied!";
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 1400);
+  });
+});
+
+/* ============================================================
+   USER LOOKUP + PROFILE PANEL
+   ============================================================ */
+async function maybeLookupUser(q) {
+  if (!q) return false;
+  const isMention = q.startsWith("@");
+  const isUid = /^\d{15,}$/.test(q);
+  if (!isMention && !isUid) return false;
+
+  const members = await loadMembers();
+  const needle = isMention ? q.slice(1).toLowerCase() : q;
+
+  const match = members.find(m => {
+    if (isUid) return m.user_id === needle;
+    return (m.username || "").toLowerCase() === needle || (m.display_name || "").toLowerCase() === needle;
+  });
+
+  if (!match) {
+    showProfileEmpty(needle, isUid);
+    return true;
+  }
+
+  openProfile(match);
+  return true;
+}
+
+function closeProfile() {
+  profilePanel.classList.remove("visible");
+  profileBackdrop.classList.remove("visible");
+  state.activeProfile = null;
+}
+
+profileClose.addEventListener("click", closeProfile);
+profileBackdrop.addEventListener("click", closeProfile);
+
+function showProfileEmpty(query, isUid) {
+  profileContent.innerHTML = `
+    <div class="profile-empty" style="padding-top: 140px;">
+      <div class="profile-empty-title">No member found</div>
+      <div style="font-size: 13px;">${isUid ? "No member with UID" : "No member named"} <strong>${escapeHtml(query)}</strong> is in this server.</div>
+    </div>
+  `;
+  profilePanel.classList.add("visible");
+  profileBackdrop.classList.add("visible");
+  state.activeProfile = { empty: true };
+}
+
+function openProfile(member) {
+  state.activeProfile = member;
+
+  const roles = member.roles || [];
+  const highest = roles.reduce((a, b) => (a.tier > b.tier ? a : b), { tier: -1, name: "Members", color: "#96908a" });
+
+  const bannerStyle = member.banner_url ? `background-image: url('${member.banner_url}');` : "";
+  const joinedDate = member.joined_at ? new Date(member.joined_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Unknown";
+  const createdDate = member.created_at ? new Date(member.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Unknown";
+
+  const roleChips = roles
+    .slice()
+    .sort((a, b) => b.tier - a.tier)
+    .map(r => `<span class="profile-role-chip" style="--chip-color: ${escapeHtml(r.color)};"><span class="chip-dot"></span>${escapeHtml(r.name)}</span>`)
+    .join("");
+
+  profileContent.innerHTML = `
+    <div class="profile-banner" style="${bannerStyle}"></div>
+    <div class="profile-avatar-wrap">
+      <img class="profile-avatar" src="${escapeHtml(member.avatar_url || '')}" alt="">
+      <span class="profile-status-dot"></span>
+    </div>
+    <div class="profile-body">
+      <div class="profile-name">${escapeHtml(member.display_name || member.username)}</div>
+      <div class="profile-handle">@${escapeHtml(member.username)}</div>
+
+      <div class="profile-bio ${member.bio ? '' : 'empty'}">
+        ${member.bio ? escapeHtml(member.bio) : "No bio available."}
+      </div>
+
+      <div class="profile-section-title">Roles (${roles.length})</div>
+      <div class="profile-roles">${roleChips || '<span style="color: var(--muted); font-size: 13px;">No roles</span>'}</div>
+
+      <div class="profile-meta">
+        <div class="profile-meta-row">
+          <span class="profile-meta-label">User ID</span>
+          <span class="profile-meta-value">${escapeHtml(member.user_id)}</span>
+        </div>
+        <div class="profile-meta-row">
+          <span class="profile-meta-label">Joined</span>
+          <span class="profile-meta-value">${escapeHtml(joinedDate)}</span>
+        </div>
+        <div class="profile-meta-row">
+          <span class="profile-meta-label">Account Created</span>
+          <span class="profile-meta-value">${escapeHtml(createdDate)}</span>
+        </div>
+        <div class="profile-meta-row">
+          <span class="profile-meta-label">Highest Role</span>
+          <span class="profile-meta-value" style="color: ${escapeHtml(highest.color)};">${escapeHtml(highest.name)}</span>
+        </div>
+      </div>
+
+      <button class="profile-view-cmds" id="profileViewCmds">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 11 12 14 22 4"></polyline>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+        </svg>
+        View Their Commands
+      </button>
+    </div>
+  `;
+
+  profilePanel.classList.add("visible");
+  profileBackdrop.classList.add("visible");
+
+  document.getElementById("profileViewCmds").addEventListener("click", () => {
+    viewMemberCommands(member);
+  });
+}
+
+function viewMemberCommands(member) {
+  closeProfile();
+
+  const roleNames = (member.roles || []).map(r => r.name);
+  if (roleNames.length === 0) roleNames.push("Members");
+
+  state.activeRoles = new Set(roleNames);
+  filtersEl.querySelectorAll(".filter-chip").forEach(chip => {
+    chip.classList.toggle("active", state.activeRoles.has(chip.dataset.role));
+  });
+
+  searchInput.value = "";
+  state.query = "";
+  searchClear.classList.remove("visible");
+
+  applyFilters();
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  resultsMeta.innerHTML = `Showing commands available to <strong>${escapeHtml(member.display_name || member.username)}</strong> (${roleNames.join(", ")}) <span class="clear-search" id="clearAllFilters">clear</span>`;
+  resultsMeta.classList.remove("hidden");
+  const clearAll = document.getElementById("clearAllFilters");
+  if (clearAll) {
+    clearAll.addEventListener("click", () => {
+      state.activeRoles.clear();
+      filtersEl.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+      applyFilters();
+    });
+  }
+}
+
+if (location.hash) {
+  const hash = decodeURIComponent(location.hash.slice(1));
+  searchInput.value = hash;
+  state.query = hash.toLowerCase();
+  searchClear.classList.add("visible");
+}
+
+applyFilters();
+
+(async () => {
+  await Promise.all([fetchUsage(), loadMembers()]);
+  document.querySelectorAll(".run-count").forEach(el => {
+    const cmd = el.dataset.cmd;
+    const count = USAGE_CACHE[cmd] || 0;
+    el.innerHTML = `<span class="pulse-dot"></span>Run count: ${count.toLocaleString()}`;
+  });
+})();
+
+/* ============================================================
+   MEMBER HUB
+   ============================================================ */
+const HUB_DRAFT_KEY = "memberhub.draft.v1";
+
+const ICON = {
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>',
+  alert: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>',
+  bug: '<path d="m8 2 1.88 1.88"></path><path d="M14.12 3.88 16 2"></path><path d="M9 7.13v-1a3 3 0 0 1 6 0v1"></path><rect x="6" y="9" width="12" height="8" rx="4"></rect><path d="M6 11H3"></path><path d="M18 11h3"></path><path d="M6 15H3"></path><path d="M18 15h3"></path><path d="M12 17v3"></path>',
+  scale: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"></path><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"></path><path d="M7 21h10"></path><path d="M12 3v18"></path><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"></path>',
+  card: '<rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line>',
+  chat: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"></path>',
+  left: '<line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline>',
+  right: '<line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline>',
+  send: '<line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>',
+  check: '<polyline points="20 6 9 17 4 12"></polyline>',
+  x: '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>'
+};
+
+function icon(name) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[name] || ""}</svg>`;
+}
+
+const WHEN_OPTIONS = ["Today", "In the last few days", "Last week", "Longer ago", "Not sure"];
+
+const TICKET_TOPICS = [
+  {
+    id: "account", label: "Account help", icon: "user",
+    questions: [
+      { key: "What do you need help with?", type: "select", options: ["I cannot log in", "I lost my account", "A role is missing", "I want a name change", "Something else"] },
+      { key: "Which account name do you use?", type: "text", placeholder: "Your Discord name", required: true }
+    ]
+  },
+  {
+    id: "report", label: "Report a user", icon: "alert",
+    questions: [
+      { key: "Who are you reporting?", type: "text", hint: "Their username or user ID.", placeholder: "example or 123456789012345678", required: true },
+      { key: "What did they do?", type: "textarea", hint: "Keep it to the facts.", max: 1200, required: true }
+    ]
+  },
+  {
+    id: "bug", label: "Report a bug", icon: "bug",
+    questions: [
+      { key: "Where did you see the bug?", type: "select", options: ["Discord server", "This website", "A bot command", "Somewhere else"] },
+      { key: "What did you expect to happen?", type: "textarea", max: 800, required: true },
+      { key: "What happened instead?", type: "textarea", max: 800, required: true }
+    ]
+  },
+  {
+    id: "appeal", label: "Appeal a punishment", icon: "scale",
+    questions: [
+      { key: "Which punishment?", type: "select", options: ["Warning", "Mute or timeout", "Kick", "Ban", "I am not sure"] },
+      { key: "Do you know your case ID?", type: "text", placeholder: "Optional", required: false },
+      { key: "Why should we undo it?", type: "textarea", hint: "Tell us what you think we missed.", max: 1200, required: true }
+    ]
+  },
+  {
+    id: "shop", label: "Payment or shop", icon: "card",
+    questions: [
+      { key: "What did you buy?", type: "text", required: true },
+      { key: "Order or payment ID", type: "text", placeholder: "Optional", required: false },
+      { key: "What went wrong?", type: "textarea", max: 1000, required: true }
+    ]
+  },
+  {
+    id: "other", label: "Something else", icon: "chat",
+    questions: [
+      { key: "What is this about?", type: "text", placeholder: "A few words", required: true }
+    ]
+  }
+];
+
+const COMMON_QUESTIONS = [
+  { key: "When did this happen?", type: "select", options: WHEN_OPTIONS },
+  { key: "What happened?", type: "textarea", hint: "Tell us in your own words. Short and clear is fine.", max: 1500, required: true },
+  { key: "Do you have links or proof?", type: "textarea", hint: "Optional. Paste links to screenshots, messages, or anything that helps.", max: 800, required: false },
+  { key: "How urgent is this?", type: "select", options: ["Low", "Normal", "High"] }
+];
+
+const hub = {
+  view: "support",
+  topic: null,
+  step: 0,
+  answers: {},
+  user: null,
+  lookupUser: null,
+  tickets: {},
+  busy: false
+};
+
+const supportStart = document.getElementById("supportStart");
+const supportWizard = document.getElementById("supportWizard");
+const supportDone = document.getElementById("supportDone");
+const topicGrid = document.getElementById("topicGrid");
+const confirmModal = document.getElementById("confirmModal");
+const confirmBackdrop = document.getElementById("confirmBackdrop");
+const ticketListWrap = document.getElementById("ticketListWrap");
+const ticketLookup = document.getElementById("ticketLookup");
+const ticketLookupError = document.getElementById("ticketLookupError");
+let confirmResolver = null;
+
+/* ---------- views ---------- */
+function showView(name) {
+  if (!document.getElementById("view-" + name)) name = "support";
+  document.querySelectorAll(".view").forEach(v => { v.hidden = v.id !== "view-" + name; });
+  document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+  hub.view = name;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-view]");
+  if (btn) showView(btn.dataset.view);
+});
+
+/* ---------- toast ---------- */
+let toastTimer = null;
+function toast(message) {
+  const el = document.getElementById("toast");
+  el.textContent = message;
+  el.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("visible"), 2800);
+}
+
+/* ---------- confirm popup ---------- */
+function askConfirm(user) {
+  document.getElementById("confirmAvatar").src = user.avatar_url || "";
+  document.getElementById("confirmName").textContent = user.display_name || user.username || "Unknown member";
+  document.getElementById("confirmHandle").textContent = user.username ? "@" + user.username : "no username on file";
+  document.getElementById("confirmRoles").innerHTML = (user.roles || []).slice(0, 6).map(r =>
+    `<span class="modal-role" style="--chip-color: ${escapeHtml(r.color || "#6ea8c9")}"><span class="chip-dot"></span>${escapeHtml(r.name)}</span>`
+  ).join("");
+  const joined = user.joined_at ? new Date(user.joined_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Unknown";
+  document.getElementById("confirmMeta").innerHTML = `
+    <div class="modal-meta-item"><div class="modal-meta-label">User ID</div><div class="modal-meta-value">${escapeHtml(user.user_id || "-")}</div></div>
+    <div class="modal-meta-item"><div class="modal-meta-label">Joined</div><div class="modal-meta-value">${escapeHtml(joined)}</div></div>`;
+  confirmModal.classList.add("open");
+  confirmBackdrop.classList.add("visible");
+  return new Promise(resolve => { confirmResolver = resolve; });
+}
+
+function closeConfirm(value) {
+  confirmModal.classList.remove("open");
+  confirmBackdrop.classList.remove("visible");
+  const resolve = confirmResolver;
+  confirmResolver = null;
+  if (resolve) resolve(value);
+}
+
+document.getElementById("confirmYes").addEventListener("click", () => closeConfirm(true));
+document.getElementById("confirmNo").addEventListener("click", () => closeConfirm(false));
+confirmBackdrop.addEventListener("click", () => closeConfirm(false));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && confirmResolver) {
+    e.stopPropagation();
+    closeConfirm(false);
+  }
+}, true);
+
+/* ---------- identity ---------- */
+async function resolveIdentity(value) {
+  const raw = (value || "").trim();
+  if (!raw) return { ok: false, error: "Type your username or user ID." };
+  const isUid = /^\d{15,}$/.test(raw);
+  const needle = (raw.startsWith("@") ? raw.slice(1) : raw).toLowerCase();
+  const members = await loadMembers();
+  let match = null;
+  if (isUid) {
+    match = members.find(m => String(m.user_id) === raw);
+  } else {
+    match = members.find(m => (m.username || "").toLowerCase() === needle)
+      || members.find(m => (m.display_name || "").toLowerCase() === needle);
+  }
+  if (match) return { ok: true, user: match };
+  if (isUid) return { ok: true, user: { user_id: raw, username: "", display_name: "User " + raw } };
+  return { ok: false, error: "We could not find that name. Try your user ID, or check the spelling." };
+}
+
+/* ---------- wizard ---------- */
+function wizardSteps() {
+  const topic = TICKET_TOPICS.find(t => t.id === hub.topic) || { questions: [] };
+  return [
+    { key: "__identity", label: "Your username or user ID", hint: "This is the first thing we check. Type the name you use here, or paste your user ID.", type: "text", placeholder: "@yourname or 123456789012345678", required: true },
+    { key: "__title", label: "Give your ticket a short title", hint: "A few words we can scan in the list.", type: "text", placeholder: "Cannot post in chat", required: true, max: 120 },
+    ...topic.questions,
+    ...COMMON_QUESTIONS
+  ];
+}
+
+function renderTopics() {
+  topicGrid.innerHTML = TICKET_TOPICS.map(t => `
+    <button class="topic" data-topic="${t.id}">
+      ${icon(t.icon)}
+      ${escapeHtml(t.label)}
+    </button>`).join("");
+}
+
+topicGrid.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-topic]");
+  if (!btn) return;
+  startTicket(btn.dataset.topic);
+});
+
+function saveDraft() {
+  try {
+    localStorage.setItem(HUB_DRAFT_KEY, JSON.stringify({ topic: hub.topic, step: hub.step, answers: hub.answers }));
+  } catch (err) { /* storage full or blocked */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(HUB_DRAFT_KEY); } catch (err) { /* nothing to do */ }
+}
+
+function startTicket(topicId) {
+  hub.topic = topicId;
+  hub.step = 0;
+  hub.answers = {};
+  hub.user = null;
+  supportStart.hidden = true;
+  supportDone.hidden = true;
+  supportWizard.hidden = false;
+  renderWizard();
+}
+
+function restartTickets() {
+  hub.topic = null;
+  hub.step = 0;
+  hub.answers = {};
+  hub.user = null;
+  supportWizard.hidden = true;
+  supportDone.hidden = true;
+  supportStart.hidden = false;
+  clearDraft();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function currentStep() {
+  return wizardSteps()[hub.step] || null;
+}
+
+function renderWizard() {
+  const steps = wizardSteps();
+  const step = steps[hub.step];
+  const total = steps.length;
+
+  if (!step) {
+    renderReview(steps);
+    return;
+  }
+
+  const value = hub.answers[step.key] || "";
+  const pct = Math.round((hub.step / total) * 100);
+
+  let field;
+  if (step.type === "select") {
+    field = `<select class="q-select" id="qField">${["Choose one", ...step.options].map(o =>
+      `<option value="${escapeHtml(o)}" ${value === o ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
+  } else if (step.type === "textarea") {
+    field = `<textarea class="q-textarea" id="qField" maxlength="${step.max || 2000}" placeholder="${escapeHtml(step.placeholder || "Write here")}">${escapeHtml(value)}</textarea>
+      <div class="counter" id="qCounter">${value.length} / ${step.max || 2000}</div>`;
+  } else {
+    field = `<input class="q-input" id="qField" maxlength="${step.max || 200}" placeholder="${escapeHtml(step.placeholder || "")}" value="${escapeHtml(value)}" autocomplete="off" spellcheck="false">`;
+  }
+
+  supportWizard.innerHTML = `
+    <div class="wizard-top">
+      <span class="step-label">Question ${hub.step + 1} of ${total}</span>
+      <button class="btn small ghost" id="qQuit">${icon("x")} Stop</button>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width: ${pct}%"></div></div>
+    <div class="q-label">${escapeHtml(step.label)}</div>
+    ${step.hint ? `<div class="q-hint">${escapeHtml(step.hint)}</div>` : ""}
+    ${field}
+    <div class="q-error" id="qError"></div>
+    <div class="wizard-nav">
+      <button class="btn ghost" id="qBack">${icon("left")} Back</button>
+      <button class="btn primary" id="qNext">Next ${icon("right")}</button>
+    </div>`;
+
+  const fieldEl = document.getElementById("qField");
+  fieldEl.focus();
+  fieldEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && step.type !== "textarea") {
+      e.preventDefault();
+      nextStep();
+    }
+  });
+  if (step.type === "textarea") {
+    fieldEl.addEventListener("input", () => {
+      const counter = document.getElementById("qCounter");
+      if (counter) counter.textContent = `${fieldEl.value.length} / ${step.max || 2000}`;
+    });
+  }
+  document.getElementById("qBack").addEventListener("click", backStep);
+  document.getElementById("qNext").addEventListener("click", nextStep);
+  document.getElementById("qQuit").addEventListener("click", () => {
+    if (confirm("Stop this ticket? Your answers are kept in this browser.")) restartTickets();
+  });
+}
+
+function showStepError(message) {
+  const el = document.getElementById("qError");
+  if (!el) return;
+  el.textContent = message;
+  el.classList.add("visible");
+}
+
+async function nextStep() {
+  const step = currentStep();
+  if (!step || hub.busy) return;
+  const fieldEl = document.getElementById("qField");
+  const value = (fieldEl.value || "").trim();
+
+  if (step.required && !value) {
+    showStepError("This one is needed. Please add an answer.");
+    return;
+  }
+  if (step.type === "select" && value === "Choose one") {
+    showStepError("Please pick one from the list.");
+    return;
+  }
+
+  if (step.key === "__identity") {
+    hub.busy = true;
+    fieldEl.disabled = true;
+    const found = await resolveIdentity(value);
+    hub.busy = false;
+    fieldEl.disabled = false;
+    if (!found.ok) {
+      showStepError(found.error);
+      return;
+    }
+    const yes = await askConfirm(found.user);
+    if (!yes) {
+      showStepError("No problem. Check the name or ID and try again.");
+      return;
+    }
+    hub.user = found.user;
+    hub.answers[step.key] = value;
+    hub.answers["__username"] = found.user.username || "";
+    hub.step += 1;
+    saveDraft();
+    renderWizard();
+    return;
+  }
+
+  hub.answers[step.key] = value;
+  hub.step += 1;
+  saveDraft();
+  renderWizard();
+}
+
+function backStep() {
+  if (hub.step === 0) {
+    restartTickets();
+    return;
+  }
+  hub.step -= 1;
+  renderWizard();
+}
+
+function renderReview(steps) {
+  const topic = TICKET_TOPICS.find(t => t.id === hub.topic);
+  const rows = steps.filter(s => s.key !== "__identity").map((s, index) => {
+    const stepIndex = steps.indexOf(s);
+    return `
+      <div class="review-row">
+        <div class="review-head">
+          <span class="review-key">${escapeHtml(s.label)}</span>
+          <button class="jump" data-jump="${stepIndex}">change</button>
+        </div>
+        <div class="review-val">${escapeHtml(hub.answers[s.key] || "-")}</div>
+      </div>`;
+  }).join("");
+
+  supportWizard.innerHTML = `
+    <div class="wizard-top">
+      <span class="step-label">Last check</span>
+      <button class="btn small ghost" id="qQuit">${icon("x")} Stop</button>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width: 100%"></div></div>
+    <div class="q-label">Does this look right?</div>
+    <div class="q-hint">Ticket topic: ${escapeHtml(topic ? topic.label : "Support")}. You can change any answer before sending.</div>
+    <div class="review-list">${rows}</div>
+    <div class="q-error" id="qError"></div>
+    <div class="wizard-nav">
+      <button class="btn ghost" id="qBack">${icon("left")} Back</button>
+      <button class="btn primary" id="qSend">${icon("send")} Send ticket</button>
+    </div>`;
+
+  document.getElementById("qBack").addEventListener("click", backStep);
+  document.getElementById("qQuit").addEventListener("click", () => {
+    if (confirm("Stop this ticket? Your answers are kept in this browser.")) restartTickets();
+  });
+  document.getElementById("qSend").addEventListener("click", sendTicket);
+  supportWizard.querySelectorAll("[data-jump]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      hub.step = parseInt(btn.dataset.jump, 10);
+      renderWizard();
+    });
+  });
+}
+
+async function sendTicket() {
+  if (hub.busy) return;
+  if (!hub.user) {
+    const found = await resolveIdentity(hub.answers["__identity"] || "");
+    if (found.ok) hub.user = found.user;
+  }
+  if (!hub.user) {
+    showStepError("We lost who you are. Go back to the first question.");
+    return;
+  }
+  const sendBtn = document.getElementById("qSend");
+  hub.busy = true;
+  sendBtn.disabled = true;
+  sendBtn.textContent = "Sending...";
+
+  const answers = {};
+  Object.entries(hub.answers).forEach(([key, value]) => {
+    if (!key.startsWith("__") && value) answers[key] = value;
+  });
+  const urgency = (hub.answers["How urgent is this?"] || "Normal").toLowerCase();
+
+  try {
+    const res = await fetch("/api/tickets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: hub.user.user_id,
+        username: hub.user.username || "",
+        display_name: hub.user.display_name || "",
+        avatar_url: hub.user.avatar_url || "",
+        category: hub.topic,
+        subject: hub.answers["__title"] || "",
+        priority: urgency,
+        answers: answers
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || data.status !== "ok") throw new Error(data.message || "We could not send your ticket.");
+    clearDraft();
+    showTicketDone(data.ticket);
+  } catch (err) {
+    hub.busy = false;
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = `${icon("send")} Send ticket`;
+    showStepError(err.message || "Something went wrong. Please try again.");
+  }
+}
+
+function showTicketDone(ticket) {
+  hub.busy = false;
+  supportWizard.hidden = true;
+  supportDone.hidden = false;
+  supportDone.innerHTML = `
+    <div class="panel-title">Ticket sent</div>
+    <p class="panel-sub">A staff member will read this and answer you here.</p>
+    <div class="copy-strip">
+      <span class="copy-id" id="doneId">${escapeHtml(ticket.id)}</span>
+      <button class="btn small" id="copyId">${icon("copy")} Copy</button>
+    </div>
+    <div class="next-steps">
+      <div class="next-step"><span class="next-step-num">1</span><span class="next-step-text">Your ticket is now in the staff list with the number ${escapeHtml(ticket.id)}.</span></div>
+      <div class="next-step"><span class="next-step-num">2</span><span class="next-step-text">A reply usually comes within 24 hours.</span></div>
+      <div class="next-step"><span class="next-step-num">3</span><span class="next-step-text">Open My tickets with the same name to read the answer and write back.</span></div>
+    </div>
+    <div class="wizard-nav">
+      <button class="btn ghost" id="doneAgain">Open another ticket</button>
+      <button class="btn primary" id="doneMine">Go to my tickets</button>
+    </div>`;
+  document.getElementById("copyId").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(ticket.id);
+      toast("Ticket number copied.");
+    } catch (err) {
+      toast("Copy did not work. Write it down instead.");
+    }
+  });
+  document.getElementById("doneAgain").addEventListener("click", restartTickets);
+  document.getElementById("doneMine").addEventListener("click", () => {
+    const name = hub.user ? (hub.user.username || hub.user.user_id) : "";
+    restartTickets();
+    showView("tickets");
+    ticketLookup.value = hub.lookupValue || name;
+    lookupTickets();
+  });
+}
+
+/* ---------- my tickets ---------- */
+function formatDate(iso) {
+  if (!iso) return "-";
+  try {
+    return new Date(iso).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch (err) {
+    return iso;
+  }
+}
+
+function statusLabel(status) {
+  if (status === "answered") return "answered";
+  if (status === "closed") return "closed";
+  return "open";
+}
+
+document.getElementById("ticketLookupBtn").addEventListener("click", lookupTickets);
+ticketLookup.addEventListener("keydown", (e) => { if (e.key === "Enter") lookupTickets(); });
+
+async function lookupTickets() {
+  const raw = (ticketLookup.value || "").trim();
+  hub.lookupValue = raw;
+  ticketLookupError.classList.remove("visible");
+  if (!raw) {
+    ticketLookupError.textContent = "Add your username or user ID first.";
+    ticketLookupError.classList.add("visible");
+    return;
+  }
+  ticketListWrap.innerHTML = '<div class="empty-note">Looking up your tickets...</div>';
+
+  const found = await resolveIdentity(raw);
+  if (!found.ok) {
+    ticketListWrap.innerHTML = '<div class="empty-note">Nothing loaded yet.</div>';
+    ticketLookupError.textContent = found.error;
+    ticketLookupError.classList.add("visible");
+    return;
+  }
+  hub.lookupUser = found.user;
+
+  try {
+    const res = await fetch(`/api/tickets?user_id=${encodeURIComponent(found.user.user_id)}`);
+    const data = await res.json();
+    if (!res.ok || data.status !== "ok") throw new Error(data.message || "Lookup failed.");
+    hub.tickets = {};
+    data.tickets.forEach(t => { hub.tickets[t.id] = t; });
+    renderTicketList(data.tickets, found.user);
+    updateBadge(data.open_count);
+  } catch (err) {
+    ticketListWrap.innerHTML = '<div class="empty-note">Could not load your tickets right now.</div>';
+  }
+}
+
+function updateBadge(count) {
+  const badge = document.getElementById("openTicketBadge");
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = `${count} open`;
+    badge.hidden = false;
+  } else {
+    badge.hidden = true;
+  }
+}
+
+function renderTicketList(tickets, user) {
+  if (!tickets.length) {
+    ticketListWrap.innerHTML = `<div class="empty-note">No tickets for ${escapeHtml(user.display_name || user.username || user.user_id)} yet. Open one from the Support page.</div>`;
+    return;
+  }
+  ticketListWrap.innerHTML = `<div class="ticket-list">${tickets.map(ticketItemHtml).join("")}</div>`;
+  if (hub.openTicket && hub.tickets[hub.openTicket]) {
+    const item = ticketListWrap.querySelector(`.ticket-item[data-ticket="${hub.openTicket}"]`);
+    if (item) {
+      const detail = item.querySelector(".ticket-detail");
+      detail.innerHTML = ticketDetailHtml(hub.tickets[hub.openTicket]);
+      detail.hidden = false;
+    }
+  }
+}
+
+function ticketItemHtml(t) {
+  return `
+    <div class="ticket-item" data-ticket="${escapeHtml(t.id)}">
+      <div class="ticket-row">
+        <div>
+          <div class="ticket-id">${escapeHtml(t.id)}</div>
+          <div class="ticket-subject">${escapeHtml(t.subject || t.category_label || "Ticket")}</div>
+          <div class="ticket-meta">${escapeHtml(t.category_label || "")} &middot; sent ${escapeHtml(formatDate(t.created_at))}</div>
+        </div>
+        <span class="status-pill status-${statusLabel(t.status)}">${statusLabel(t.status)}</span>
+      </div>
+      <div class="ticket-detail" hidden></div>
+    </div>`;
+}
+
+ticketListWrap.addEventListener("click", (e) => {
+  const item = e.target.closest(".ticket-item");
+  if (!item) return;
+  if (e.target.closest("button, textarea, input, a")) return;
+  const detail = item.querySelector(".ticket-detail");
+  const ticket = hub.tickets[item.dataset.ticket];
+  if (!ticket) return;
+  if (detail.hidden) {
+    detail.innerHTML = ticketDetailHtml(ticket);
+    detail.hidden = false;
+  } else {
+    detail.hidden = true;
+  }
+});
+
+function ticketDetailHtml(t) {
+  const answers = Object.entries(t.answers || {}).map(([key, value]) => `
+    <div class="review-row">
+      <div class="review-key">${escapeHtml(key)}</div>
+      <div class="review-val">${escapeHtml(value)}</div>
+    </div>`).join("");
+  const replies = (t.replies || []).map(r => `
+    <div class="reply ${r.staff ? "staff" : ""}">
+      <div class="reply-head"><span>${escapeHtml(r.author || "Member")}${r.staff ? " (staff)" : ""}</span><span>${escapeHtml(formatDate(r.at))}</span></div>
+      <div class="reply-body">${escapeHtml(r.body)}</div>
+    </div>`).join("") || '<div class="empty-note">No replies yet.</div>';
+  const open = t.status !== "closed";
+  return `
+    <div class="review-key" style="margin-bottom: 8px;">What you told us</div>
+    <div class="review-list">${answers}</div>
+    <div class="review-key" style="margin: 16px 0 8px;">Replies</div>
+    <div class="thread">${replies}</div>
+    ${open ? `
+      <div class="reply-form">
+        <textarea class="q-textarea" data-reply="${escapeHtml(t.id)}" maxlength="2000" placeholder="Write a reply to the team"></textarea>
+        <div class="wizard-nav">
+          <button class="btn danger" data-close="${escapeHtml(t.id)}">${icon("x")} Close ticket</button>
+          <button class="btn primary" data-send="${escapeHtml(t.id)}">${icon("send")} Send reply</button>
+        </div>
+      </div>` : '<div class="empty-note">This ticket is closed.</div>'}`;
+}
+
+ticketListWrap.addEventListener("click", async (e) => {
+  const sendBtn = e.target.closest("[data-send]");
+  const closeBtn = e.target.closest("[data-close]");
+  if (!sendBtn && !closeBtn) return;
+  const id = (sendBtn || closeBtn).dataset.send || (sendBtn || closeBtn).dataset.close;
+  const user = hub.lookupUser;
+  if (!user) return;
+
+  if (sendBtn) {
+    const box = ticketListWrap.querySelector(`[data-reply="${id}"]`);
+    const body = (box && box.value || "").trim();
+    if (!body) {
+      toast("Write a message first.");
+      return;
+    }
+    sendBtn.disabled = true;
+    await ticketAction(`/api/tickets/${id}/reply`, { user_id: user.user_id, body: body }, "Reply sent.");
+    return;
+  }
+
+  if (closeBtn) {
+    if (!confirm("Close this ticket? You can still open a new one later.")) return;
+    closeBtn.disabled = true;
+    await ticketAction(`/api/tickets/${id}/close`, { user_id: user.user_id }, "Ticket closed.");
+  }
+});
+
+async function ticketAction(url, payload, okMessage) {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok || data.status !== "ok") throw new Error(data.message || "That did not work.");
+    hub.tickets[data.ticket.id] = data.ticket;
+    toast(okMessage);
+    lookupTickets();
+  } catch (err) {
+    toast(err.message || "That did not work.");
+  }
+}
+
+/* ---------- boot ---------- */
+renderTopics();
+showView("support");
+
+try {
+  const saved = JSON.parse(localStorage.getItem(HUB_DRAFT_KEY) || "null");
+  if (saved && saved.topic && TICKET_TOPICS.some(t => t.id === saved.topic)) {
+    hub.topic = saved.topic;
+    hub.step = saved.step || 0;
+    hub.answers = saved.answers || {};
+    supportStart.hidden = true;
+    supportWizard.hidden = false;
+    renderWizard();
+    toast("We kept your last ticket answers.");
+  }
+} catch (err) { /* no draft */ }
+</script>
+</body>
+</html>

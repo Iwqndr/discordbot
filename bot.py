@@ -1,4 +1,3 @@
-import os
 import math
 import asyncio
 import datetime
@@ -9,7 +8,16 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
-load_dotenv()
+from console import debug, error, info, ok, warn
+from config import (
+    DISCORD_TOKEN,
+    GUILD_ID,
+    COMMAND_PREFIX,
+    POSTHELP_ROLE_ID,
+    MESSAGE_CATEGORY_ID,
+    SYSTEM_CATEGORY_ID,
+    SUPPORT_LINK,
+)
 
 from antiraid import (
     setup_anti_raid,
@@ -34,6 +42,11 @@ from antiraid import (
     PaginatedLogView,
     post_system_log,
     flush_all_buffers,
+    register_verification_view,
+    refresh_verification_panel,
+    member_is_verified,
+    send_punishment_dm,
+    record_case,
 )
 from supabase_helper import (
     increment_command_usage,
@@ -42,10 +55,10 @@ from supabase_helper import (
     fetch_all_member_ids,
 )
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID", 0))
-POSTHELP_ROLE_ID = 1548496816989798400
-VERIFIED_ROLE_ID = 1548559332063313921
+TOKEN = DISCORD_TOKEN
+
+# Set once the persistent verification view has been re-attached after a restart.
+_verification_restored = False
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -54,7 +67,7 @@ intents.presences = True
 intents.guilds = True
 intents.moderation = True
 
-bot = commands.Bot(command_prefix=">", intents=intents, help_command=None)
+bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=intents, help_command=None)
 
 
 @bot.before_invoke
@@ -64,7 +77,7 @@ async def track_command_usage(ctx: commands.Context):
     try:
         increment_command_usage(ctx.command.qualified_name)
     except Exception as e:
-        print(f"[SUPABASE] Usage increment failed: {e}")
+        warn(f"Supabase usage increment failed: {e}")
 
 
 STAFF_PERMS = (
@@ -160,15 +173,18 @@ async def _push_member_to_supabase(member: discord.Member):
         row = await _build_member_row(member)
         upsert_members([row])
     except Exception as e:
-        print(f"[SUPABASE] member sync failed for {member.id}: {e}")
+        warn(f"Supabase member sync failed for {member.id}: {e}")
 
 
 @bot.command(name="verification")
 @commands.has_permissions(administrator=True)
 async def send_verification_panel(ctx: commands.Context, target_channel: discord.TextChannel):
     try:
-        await deploy_verification_panel(target_channel, VERIFIED_ROLE_ID, bot.user)
-        await ctx.send(f"Verification panel deployed to {target_channel.mention}.")
+        await deploy_verification_panel(target_channel, bot.user)
+        await ctx.send(
+            f"Verification panel deployed to {target_channel.mention}. "
+            "It will keep working after restarts - edit it from the Owner Panel > Verification Panel."
+        )
     except discord.Forbidden:
         await ctx.send("I do not have permission to send messages in that channel.")
 
@@ -182,7 +198,7 @@ async def slogs(ctx: commands.Context):
     if not logging_guild:
         return await ctx.send(
             "[X] Could not find a server with the message-logs and system-logs categories. "
-            f"Make sure the bot is in the server that has categories `{1548581331175350363}` and `{1548582743368147015}`."
+            f"Make sure the bot is in the server that has categories `{MESSAGE_CATEGORY_ID}` and `{SYSTEM_CATEGORY_ID}`."
         )
 
     msg_parent, sys_parent = await ensure_logging_channels(logging_guild)
@@ -234,7 +250,7 @@ async def syncmembers(ctx: commands.Context):
             sent += len(batch)
         else:
             failed += len(batch)
-            print(f"[SYNC] Upsert failed: {status} {raw}")
+            warn(f"Sync upsert failed: {status} {raw}")
 
     removed = 0
     for uid in to_delete:
@@ -255,16 +271,39 @@ async def syncmembers(ctx: commands.Context):
 
 @bot.event
 async def on_ready():
-    print(f"- Logged in as {bot.user} (ID: {bot.user.id})")
+    ok(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    # The bot is prefix-first, so any slash command left behind by an older
+    # build is wiped here. What this file registers itself (/apply) is kept,
+    # which is why this is a clear-and-restore rather than a blanket clear.
     try:
         target_guild = discord.Object(id=GUILD_ID)
+        own_global = [c for c in bot.tree.get_commands(guild=None)]
+        own_guild = [c for c in bot.tree.get_commands(guild=target_guild)]
         bot.tree.clear_commands(guild=target_guild)
+        for cmd in own_guild or own_global:
+            bot.tree.add_command(cmd, guild=target_guild)
         await bot.tree.sync(guild=target_guild)
         bot.tree.clear_commands(guild=None)
+        for cmd in own_global:
+            bot.tree.add_command(cmd)
         await bot.tree.sync()
-        print("- Cleared global + guild slash commands (prefix-only mode)")
+        names = sorted({c.name for c in own_global} | {c.name for c in own_guild})
+        info(f"Slash commands synced (prefix mode + {names or 'none'})")
     except Exception as e:
-        print(f"- Slash cleanup skipped: {e}")
+        warn(f"Slash sync skipped: {e}")
+
+    # Re-attach the persistent verify button and re-render the stored panel, so a
+    # previously deployed panel keeps working without running >verification again.
+    global _verification_restored
+    if not _verification_restored:
+        _verification_restored = True
+        if register_verification_view(bot):
+            if await refresh_verification_panel(bot):
+                info("Verification panel restored with the saved configuration.")
+            else:
+                debug("Persistent verify button registered (no stored panel to refresh).")
+        else:
+            warn("Verification panel could not be registered; run >verification again.")
 
 
 @bot.event
@@ -292,9 +331,9 @@ async def on_command_error(ctx: commands.Context, error):
 async def on_disconnect():
     try:
         await flush_all_buffers(bot)
-        print("- Flushed pending log buffers before disconnect.")
+        info("Flushed pending log buffers before disconnect.")
     except Exception as e:
-        print(f"- Flush on disconnect failed: {e}")
+        error(f"Flush on disconnect failed: {e}")
 
 
 def parse_duration(s: str) -> int:
@@ -339,6 +378,19 @@ async def confirm(ctx: commands.Context, prompt: str, timeout: int = 20) -> bool
         return False
 
 
+def _case_suffix(cases: list) -> str:
+    """The "(C-1042 - C-1046)" tail a mass-action reply carries.
+
+    A mass action is N separate cases; the confirmation names the first and
+    last so a moderator can find them without opening the dashboard.
+    """
+    if not cases:
+        return ""
+    if len(cases) == 1:
+        return f" ({cases[0]})"
+    return f" ({len(cases)} cases: {cases[0]}-{cases[-1]})"
+
+
 def can_moderate(ctx: commands.Context, target: discord.Member) -> bool:
     if ctx.author == ctx.guild.owner:
         return True
@@ -374,6 +426,7 @@ HELP_CATEGORIES = [
             ("channelinfo", "Info about a channel"),
             ("uptime", "Show bot uptime"),
             ("help", "Show this menu"),
+            ("apply", "Apply to join the staff team"),
         ],
         "requires": None,
     },
@@ -822,6 +875,7 @@ POSTHELP_TIERS = [
             ("channelinfo", "Info about a channel"),
             ("uptime", "Show bot uptime"),
             ("help", "Show your personal command list"),
+            ("apply", "Apply to join the staff team"),
             ("roll", "Roll dice (e.g. 2d20)"),
             ("coinflip", "Flip a coin"),
             ("8ball", "Ask the magic 8-ball"),
@@ -833,7 +887,7 @@ POSTHELP_TIERS = [
 def build_help_embed(ctx: commands.Context) -> discord.Embed:
     embed = discord.Embed(
         title="Command List",
-        description=f"Prefix: `>`. Showing commands available to **{ctx.author.display_name}**.",
+        description=f"Prefix: `{COMMAND_PREFIX}`. Showing commands available to **{ctx.author.display_name}**.",
         color=discord.Color.blurple(),
     )
     if bot.user:
@@ -844,7 +898,7 @@ def build_help_embed(ctx: commands.Context) -> discord.Embed:
         req = cat["requires"]
         if req is not None and not has_any_perm(ctx, *req):
             continue
-        lines = [f"`>{cmd}` -- {desc}" for cmd, desc in cat["commands"]]
+        lines = [f"`{COMMAND_PREFIX}{cmd}` -- {desc}" for cmd, desc in cat["commands"]]
         embed.add_field(
             name=f"{cat['emoji']} {cat['name']}",
             value="\n".join(lines)[:1020],
@@ -870,6 +924,88 @@ async def help_cmd(ctx: commands.Context):
         await ctx.send(embed=embed)
 
 
+def application_embed(guild) -> discord.Embed:
+    """The "come work with us" pitch, shared by >apply and /apply.
+
+    The link is only attached when SUPPORT_LINK is configured, so the embed
+    never carries a dead or None URL — it just loses the last sentence's link.
+    """
+    if SUPPORT_LINK:
+        closing = f"**To apply, please visit our [tickets page]({SUPPORT_LINK}).**"
+    else:
+        closing = "**To apply, please open a ticket on our support page.**"
+    embed = discord.Embed(
+        title="Staff Application",
+        description=(
+            "**We're looking for new staff.**\n\n"
+            "If you think you'd be a good fit for the team, you can apply from our support "
+            "page. Applications are reviewed by the current staff and you'll hear back "
+            "within a few days either way.\n\n"
+            f"{closing}"
+        ),
+        color=discord.Color.blurple(),
+        url=SUPPORT_LINK or None,
+    )
+    name = getattr(guild, "name", None) or "this server"
+    icon_url = str(guild.icon.url) if guild is not None and guild.icon else None
+    embed.set_footer(text=name, icon_url=icon_url)
+    if icon_url:
+        embed.set_thumbnail(url=icon_url)
+    return embed
+
+
+@bot.command(name="apply")
+@commands.cooldown(rate=1, per=30, type=commands.BucketType.user)
+async def apply_cmd(ctx: commands.Context):
+    """Prefix half of /apply.
+
+    A prefix command cannot send an ephemeral message — that is a Discord API
+    limit, not a bot one — so this posts a short line the author can see, wipes
+    it after six seconds, and puts the real pitch in their DMs.
+    """
+    embed = application_embed(ctx.guild)
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
+    notice = None
+    try:
+        notice = await ctx.send(
+            f"{ctx.author.mention} sent you the application link, check your DMs.",
+            delete_after=6,
+        )
+    except Exception:
+        pass
+    try:
+        await ctx.author.send(embed=embed)
+    except discord.Forbidden:
+        # DMs are shut. The channel line is the only thing they will see, so
+        # make it useful rather than shipping them a DM that never arrives.
+        if notice is not None:
+            try:
+                await notice.edit(content=f"{ctx.author.mention} your DMs are closed — "
+                                           "open a ticket on the support page instead.")
+            except Exception:
+                pass
+        warn(f"Could not DM the application embed to {ctx.author} (DMs closed).")
+    except Exception as exc:
+        warn(f"Could not DM the application embed: {type(exc).__name__}")
+
+
+@bot.tree.command(name="apply", description="Apply to join the staff team")
+async def apply_slash(interaction: discord.Interaction):
+    """Slash half of >apply: a genuinely private reply.
+
+    This is the half that is actually ephemeral. It needs no permissions and
+    works in any channel, exactly like the prefix version.
+    """
+    embed = application_embed(interaction.guild)
+    try:
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception as exc:
+        warn(f"/apply could not reply: {type(exc).__name__}")
+
+
 def build_posthelp_embeds() -> list[discord.Embed]:
     embeds = []
 
@@ -889,7 +1025,7 @@ def build_posthelp_embeds() -> list[discord.Embed]:
     for tier in POSTHELP_TIERS:
         lines = []
         for cmd, desc in tier["commands"]:
-            lines.append(f"\u00BB `>{cmd}`\n\u2003\u2003\u2022 *{desc}*")
+            lines.append(f"\u00BB `{COMMAND_PREFIX}{cmd}`\n\u2003\u2003\u2022 *{desc}*")
         chunk = "\n".join(lines)
         if len(chunk) > 4000:
             chunk = chunk[:4000]
@@ -1082,10 +1218,17 @@ async def kick(ctx: commands.Context, member: discord.Member, *, reason: str = "
     await try_delete(ctx)
     if not can_moderate(ctx, member):
         return await ctx.send("[X] You cannot moderate this member (role hierarchy).", delete_after=5)
+    # The case is opened first so its id can go into the DM, the history entry
+    # and the confirmation line — one id for the whole punishment.
+    case = record_case(ctx.guild, member, "kick", reason, ctx.author)
+    # Before the kick, so the DM lands while the member can still receive it.
+    await send_punishment_dm(member, ctx.guild, "kick", reason, case["id"], ctx.author,
+                             {"moderator_tag": case.get("moderator_tag")})
     await member.kick(reason=reason)
-    history_tracker.record(ctx.guild.id, member.id, "kick", ctx.author.id, reason)
+    history_tracker.record(ctx.guild.id, member.id, "kick", ctx.author.id, reason,
+                           case_id=case["id"], moderator_tag=str(ctx.author))
     await safe_refresh_verification_log(bot, ctx.guild, member.id)
-    await ctx.send(f"> Kicked **{member}** -- {reason}")
+    await ctx.send(f"> Kicked **{member}** -- {reason} (`{case['id']}`)")
 
 
 @bot.command(name="ban")
@@ -1095,10 +1238,15 @@ async def ban(ctx: commands.Context, member: discord.Member, *, reason: str = "N
     await try_delete(ctx)
     if not can_moderate(ctx, member):
         return await ctx.send("[X] You cannot moderate this member (role hierarchy).", delete_after=5)
+    case = record_case(ctx.guild, member, "ban", reason, ctx.author)
+    # Before the ban: afterwards the bot and the member share no guild.
+    await send_punishment_dm(member, ctx.guild, "ban", reason, case["id"], ctx.author,
+                             {"moderator_tag": case.get("moderator_tag")})
     await member.ban(reason=reason)
-    history_tracker.record(ctx.guild.id, member.id, "ban", ctx.author.id, reason)
+    history_tracker.record(ctx.guild.id, member.id, "ban", ctx.author.id, reason,
+                           case_id=case["id"], moderator_tag=str(ctx.author))
     await safe_refresh_verification_log(bot, ctx.guild, member.id)
-    await ctx.send(f"> Banned **{member}** -- {reason}")
+    await ctx.send(f"> Banned **{member}** -- {reason} (`{case['id']}`)")
 
 
 @bot.command(name="unban")
@@ -1119,11 +1267,15 @@ async def softban(ctx: commands.Context, member: discord.Member, *, reason: str 
     await try_delete(ctx)
     if not can_moderate(ctx, member):
         return await ctx.send("[X] You cannot moderate this member.", delete_after=5)
+    case = record_case(ctx.guild, member, "softban", reason, ctx.author)
+    await send_punishment_dm(member, ctx.guild, "softban", reason, case["id"], ctx.author,
+                             {"moderator_tag": case.get("moderator_tag")})
     await member.ban(reason=reason, delete_message_days=7)
     await ctx.guild.unban(discord.Object(id=member.id))
-    history_tracker.record(ctx.guild.id, member.id, "softban", ctx.author.id, reason)
+    history_tracker.record(ctx.guild.id, member.id, "softban", ctx.author.id, reason,
+                           case_id=case["id"], moderator_tag=str(ctx.author))
     await safe_refresh_verification_log(bot, ctx.guild, member.id)
-    await ctx.send(f"> Softbanned **{member}** (messages purged).")
+    await ctx.send(f"> Softbanned **{member}** (messages purged) (`{case['id']}`).")
 
 
 @bot.command(name="tempban")
@@ -1136,10 +1288,21 @@ async def tempban(ctx: commands.Context, member: discord.Member, duration: str, 
         return await ctx.send("[X] Invalid duration. Use `10m`, `2h`, `1d`.", delete_after=5)
     if not can_moderate(ctx, member):
         return await ctx.send("[X] You cannot moderate this member.", delete_after=5)
+    expires = discord.utils.utcnow() + datetime.timedelta(seconds=secs)
+    case = record_case(ctx.guild, member, "tempban", reason, ctx.author, {
+        "duration": f"{duration} ({human_delta(secs)})",
+        "expires_at": expires.strftime("%Y-%m-%d %H:%M UTC"),
+    })
+    await send_punishment_dm(member, ctx.guild, "tempban", reason, case["id"], ctx.author, {
+        "moderator_tag": case.get("moderator_tag"),
+        "duration": f"{duration} ({human_delta(secs)})",
+        "expires_at": expires.strftime("%Y-%m-%d %H:%M UTC"),
+    })
     await member.ban(reason=f"[{duration}] {reason}")
-    history_tracker.record(ctx.guild.id, member.id, "ban", ctx.author.id, f"[tempban {duration}] {reason}")
+    history_tracker.record(ctx.guild.id, member.id, "ban", ctx.author.id, f"[tempban {duration}] {reason}",
+                           case_id=case["id"], moderator_tag=str(ctx.author))
     await safe_refresh_verification_log(bot, ctx.guild, member.id)
-    await ctx.send(f"> Temp-banned **{member}** for {human_delta(secs)}.")
+    await ctx.send(f"> Temp-banned **{member}** for {human_delta(secs)} (`{case['id']}`).")
     await asyncio.sleep(secs)
     try:
         await ctx.guild.unban(discord.Object(id=member.id), reason="Tempban expired")
@@ -1171,17 +1334,24 @@ async def masskick(ctx: commands.Context, members: commands.Greedy[discord.Membe
     if not await confirm(ctx, f"Kick **{len(members)}** member(s)?"):
         return await ctx.send("> Cancelled.")
     n = 0
+    cases = []
     for m in members:
         if not can_moderate(ctx, m):
             continue
         try:
+            # One case per member: a mass action is N punishments, not one.
+            case = record_case(ctx.guild, m, "kick", reason, ctx.author)
+            await send_punishment_dm(m, ctx.guild, "kick", reason, case["id"], ctx.author,
+                                     {"moderator_tag": case.get("moderator_tag")})
             await m.kick(reason=reason)
-            history_tracker.record(ctx.guild.id, m.id, "kick", ctx.author.id, reason)
+            history_tracker.record(ctx.guild.id, m.id, "kick", ctx.author.id, reason,
+                                   case_id=case["id"], moderator_tag=str(ctx.author))
             await safe_refresh_verification_log(bot, ctx.guild, m.id)
+            cases.append(case["id"])
             n += 1
         except Exception:
             pass
-    await ctx.send(f"> Kicked **{n}** member(s).")
+    await ctx.send(f"> Kicked **{n}** member(s)." + _case_suffix(cases))
 
 
 @bot.command(name="massban")
@@ -1193,17 +1363,23 @@ async def massban(ctx: commands.Context, members: commands.Greedy[discord.Member
     if not await confirm(ctx, f"Ban **{len(members)}** member(s)?"):
         return await ctx.send("> Cancelled.")
     n = 0
+    cases = []
     for m in members:
         if not can_moderate(ctx, m):
             continue
         try:
+            case = record_case(ctx.guild, m, "ban", reason, ctx.author)
+            await send_punishment_dm(m, ctx.guild, "ban", reason, case["id"], ctx.author,
+                                     {"moderator_tag": case.get("moderator_tag")})
             await m.ban(reason=reason)
-            history_tracker.record(ctx.guild.id, m.id, "ban", ctx.author.id, reason)
+            history_tracker.record(ctx.guild.id, m.id, "ban", ctx.author.id, reason,
+                                   case_id=case["id"], moderator_tag=str(ctx.author))
             await safe_refresh_verification_log(bot, ctx.guild, m.id)
+            cases.append(case["id"])
             n += 1
         except Exception:
             pass
-    await ctx.send(f"> Banned **{n}** member(s).")
+    await ctx.send(f"> Banned **{n}** member(s)." + _case_suffix(cases))
 
 
 @bot.command(name="softbanall")
@@ -1215,18 +1391,24 @@ async def softbanall(ctx: commands.Context, members: commands.Greedy[discord.Mem
     if not await confirm(ctx, f"Softban **{len(members)}** member(s)?"):
         return await ctx.send("> Cancelled.")
     n = 0
+    cases = []
     for m in members:
         if not can_moderate(ctx, m):
             continue
         try:
+            case = record_case(ctx.guild, m, "softban", reason, ctx.author)
+            await send_punishment_dm(m, ctx.guild, "softban", reason, case["id"], ctx.author,
+                                     {"moderator_tag": case.get("moderator_tag")})
             await m.ban(reason=reason, delete_message_days=7)
             await ctx.guild.unban(discord.Object(id=m.id))
-            history_tracker.record(ctx.guild.id, m.id, "softban", ctx.author.id, reason)
+            history_tracker.record(ctx.guild.id, m.id, "softban", ctx.author.id, reason,
+                                   case_id=case["id"], moderator_tag=str(ctx.author))
             await safe_refresh_verification_log(bot, ctx.guild, m.id)
+            cases.append(case["id"])
             n += 1
         except Exception:
             pass
-    await ctx.send(f"> Softbanned **{n}** member(s).")
+    await ctx.send(f"> Softbanned **{n}** member(s)." + _case_suffix(cases))
 
 
 @bot.command(name="timeout")
@@ -1260,7 +1442,7 @@ WARNS: dict[int, dict[int, list[dict]]] = {}
 
 @bot.command(name="warn")
 @commands.has_permissions(moderate_members=True)
-async def warn(ctx: commands.Context, member: discord.Member, *, reason: str = "No reason"):
+async def warn_cmd(ctx: commands.Context, member: discord.Member, *, reason: str = "No reason"):
     await try_delete(ctx)
     if not can_moderate(ctx, member):
         return await ctx.send("[X] You cannot warn this member.", delete_after=5)
@@ -1745,8 +1927,7 @@ async def checkbg(ctx: commands.Context, member: discord.Member):
     account_age = (discord.utils.utcnow() - member.created_at).days
     joined_at = member.joined_at.strftime("%b %d, %Y at %H:%M UTC") if member.joined_at else "Unknown"
     created_at = member.created_at.strftime("%b %d, %Y at %H:%M UTC")
-    verified_role = ctx.guild.get_role(VERIFIED_ROLE_ID)
-    is_verified = verified_role in member.roles if verified_role else False
+    is_verified = member_is_verified(member)
 
     embed = discord.Embed(
         title=f"Background Check: {member}",
@@ -2381,7 +2562,7 @@ async def on_member_remove(member: discord.Member):
     try:
         delete_member(str(member.id))
     except Exception as e:
-        print(f"[SUPABASE] member delete failed for {member.id}: {e}")
+        warn(f"Supabase member delete failed for {member.id}: {e}")
 
 
 @bot.event

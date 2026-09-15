@@ -69,6 +69,21 @@ def delete_member(user_id):
     return _request("DELETE", f"members?user_id=eq.{user_id}", use_service=True)
 
 
+def fetch_member(user_id):
+    """Return the stored members row for a user, or None if unavailable."""
+    try:
+        status, raw = _request("GET", f"members?user_id=eq.{user_id}&limit=1", use_service=True)
+    except RuntimeError:
+        return None
+    if status != 200:
+        return None
+    try:
+        rows = json.loads(raw)
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
 def fetch_all_member_ids():
     status, raw = _request("GET", "members?select=user_id", use_service=True)
     if status != 200:
