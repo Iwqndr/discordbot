@@ -2370,47 +2370,29 @@ class AntiRaidSystem:
         if action == "delete":
             return True, self._action_label(action, cfg)
 
-        # A kick or ban from AutoMod is a real punishment, so it gets a real
-        # case: that is the id the member quotes when they appeal.
-        reason_text = f"AutoMod: {trigger}"
-        case = None
-        if action in ("kick", "ban"):
-            case = record_case(guild, user, action, reason_text, self.bot.user, {
-                "channel_id": getattr(message.channel, "id", ""),
-                "notes": f"Rule: {trigger}",
-            })
-
         # The rich explanation goes out before the punishment, while the bot and
         # the member still share a guild. `dm_member` is the extra gate here;
         # every other caller path always attempts it.
         should_dm = cfg.get("dm_member") if dm is None else dm
         if should_dm and action in ("kick", "ban"):
-            await send_punishment_dm(user, guild, action, reason_text,
-                                     case["id"] if case else None, self.bot.user,
-                                     {"moderator_tag": "AutoMod",
-                                      "moderator_id": str(getattr(self.bot.user, "id", ""))})
+            await send_punishment_dm(user, guild, action, f"AutoMod: {trigger}")
 
         try:
             if action == "timeout":
                 until = discord.utils.utcnow() + datetime.timedelta(seconds=int(cfg.get("timeout_seconds") or 300))
-                await user.timeout(until, reason=reason_text)
-                history_tracker.record(guild.id, user.id, "timeout", self.bot.user.id, reason_text)
+                await user.timeout(until, reason=f"AutoMod: {trigger}")
+                history_tracker.record(guild.id, user.id, "timeout", self.bot.user.id, f"AutoMod: {trigger}")
             elif action == "kick":
-                await user.kick(reason=reason_text)
-                history_tracker.record(guild.id, user.id, "kick", self.bot.user.id, reason_text,
-                                       case_id=case["id"], moderator_tag="AutoMod")
+                await user.kick(reason=f"AutoMod: {trigger}")
+                history_tracker.record(guild.id, user.id, "kick", self.bot.user.id, f"AutoMod: {trigger}")
             elif action == "ban":
-                await guild.ban(user, reason=reason_text, delete_message_days=1)
-                history_tracker.record(guild.id, user.id, "ban", self.bot.user.id, reason_text,
-                                       case_id=case["id"], moderator_tag="AutoMod")
+                await guild.ban(user, reason=f"AutoMod: {trigger}", delete_message_days=1)
+                history_tracker.record(guild.id, user.id, "ban", self.bot.user.id, f"AutoMod: {trigger}")
             else:
                 return False, f"Unknown action '{action}'"
         except Exception as exc:
             # The message is already gone, so this is a partial success and the
-            # log says so instead of pretending it worked. The case stays, with
-            # a note saying it never landed.
-            if case:
-                case_store.update(case["id"], {"notes": f"Rule: {trigger} — failed: {type(exc).__name__}"})
+            # log says so instead of pretending it worked.
             return False, f"{self._action_label(action, cfg)} failed ({type(exc).__name__})"
 
         try:
