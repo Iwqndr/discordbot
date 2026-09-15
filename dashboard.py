@@ -90,13 +90,24 @@ def set_bot(b):
 
 @app.route("/")
 def index():
+    """Public member hub: support tickets, command list, and info.
+
+    The member page is the site root; the staff panel lives at /admin, so the
+    two can never be confused for one another.
+    """
+    return render_template("commands.html")
+
+
+@app.route("/admin")
+def admin_page():
+    """Staff panel. The page itself asks for authorization before it opens."""
     return render_template("dashboard.html")
 
 
 @app.route("/member")
 def member_page():
-    """Public member hub: support tickets, command list, and info."""
-    return render_template("commands.html")
+    """The member hub's original address, kept so existing links still work."""
+    return redirect("/")
 
 
 # ==========================================================
@@ -204,7 +215,7 @@ def _owner_unlocked():
     return str(session.get("owner_ok_for") or "") == current
 
 
-def _safe_next(path, fallback="/member"):
+def _safe_next(path, fallback="/"):
     """Only ever bounce back to a path on this site, never somewhere else."""
     path = str(path or "").strip()
     if not path.startswith("/") or path.startswith("//"):
@@ -215,7 +226,7 @@ def _safe_next(path, fallback="/member"):
 @app.route("/auth/discord")
 def auth_discord():
     if not _oauth_ready():
-        return redirect("/member?login=unavailable")
+        return redirect("/?login=unavailable")
     params = {
         "client_id": DISCORD_CLIENT_ID,
         "redirect_uri": DISCORD_REDIRECT_URI,
@@ -306,12 +317,12 @@ def auth_discord_callback():
 def auth_logout():
     """Drop the session, then land wherever the caller asked to go.
 
-    The admin panel signs out to `/` and the member page to `/member`, so the
+    The admin panel signs out to `/admin` and the member page to `/`, so the
     destination rides along — validated as a local path, never an open
     redirect.
     """
     session.clear()
-    return redirect(_safe_next(request.args.get("next"), "/member"))
+    return redirect(_safe_next(request.args.get("next"), "/"))
 
 
 @app.route("/api/me", methods=["GET"])

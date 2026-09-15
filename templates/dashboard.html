@@ -10786,11 +10786,14 @@ document.addEventListener('keydown', (e) => {
    ============================================================ */
 bindModalClosers();
 
-const AUTH_SIGNIN_URL = '/auth/discord?next=' + encodeURIComponent('/');
-const AUTH_LOGOUT_URL = '/auth/logout?next=' + encodeURIComponent('/');
+// The panel lives at /admin and the member hub owns /, so every hop out of
+// here has to come back to /admin or staff would land on the member page.
+const ADMIN_PATH = '/admin';
+const AUTH_SIGNIN_URL = '/auth/discord?next=' + encodeURIComponent(ADMIN_PATH);
+const AUTH_LOGOUT_URL = '/auth/logout?next=' + encodeURIComponent(ADMIN_PATH);
 // Signing out first, then bouncing straight into Discord, is what makes the
 // account picker appear again — that is the whole "Switch Account" flow.
-const AUTH_SWITCH_URL = '/auth/logout?next=' + encodeURIComponent('/auth/discord?next=/');
+const AUTH_SWITCH_URL = '/auth/logout?next=' + encodeURIComponent('/auth/discord?next=' + ADMIN_PATH);
 
 function adminWho(user) {
   if (!user) return 'Not signed in';

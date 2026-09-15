@@ -138,8 +138,9 @@ if __name__ == "__main__":
 
     local_ip = get_local_ip()
     threading.Thread(target=run_flask, daemon=True).start()
-    info(f"Web dashboard listening on http://{local_ip}:{DASHBOARD_PORT}")
-    info(f"GitHub pusher:  http://{local_ip}:{DASHBOARD_PORT}/git")
+    info(f"Member hub:    http://{local_ip}:{DASHBOARD_PORT}/")
+    info(f"Staff panel:   http://{local_ip}:{DASHBOARD_PORT}/admin")
+    info(f"GitHub pusher: http://{local_ip}:{DASHBOARD_PORT}/git")
 
     # bot.run() blocks on Discord's event loop and is what keeps this process
     # alive. Without it __main__ returns immediately, Python exits, and the
