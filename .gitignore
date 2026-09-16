@@ -58,3 +58,15 @@ Thumbs.db
 desktop.ini
 
 *.pyc
+
+# ---- after the restructure ----
+# logging/ holds runtime state (JSON stores, message archives, member bot data,
+# dev-server logs) and is ignored. The one file that must survive a deploy is
+# the GitHub sync allow-list, so it is re-included explicitly.
+!logging/github_settings.json
+logging/memberbot_data/
+logging/message_logs/
+logging/deleted_logs/
+logging/*.log
+logging/*.log.err
+logging/run.md

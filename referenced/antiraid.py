@@ -5,6 +5,8 @@ import os
 import re
 import time
 from collections import defaultdict
+from pathlib import Path
+
 import discord
 
 from console import debug, error, warn
@@ -19,20 +21,24 @@ from config import (
 )
 
 
-HISTORY_FILE = "moderation_history.json"
-LOG_INDEX_FILE = "verification_logs.json"
-NOTES_FILE = "mod_notes.json"
-WATCHLIST_FILE = "watchlist.json"
-LOG_CONFIG_FILE = "log_config.json"
-THREAD_INDEX_FILE = "thread_index.json"
-VERIFICATION_CONFIG_FILE = "verification_config.json"
-TICKET_PANEL_CONFIG_FILE = "ticket_panel_config.json"
-AUTOMOD_CONFIG_FILE = "automod_config.json"
-MEDIA_ONLY_FILE = "media_only_channels.json"
-SELFPROMO_FILE = "selfpromo_channels.json"
-MOD_CASES_FILE = "mod_cases.json"
-MESSAGE_LOG_DIR = "message_logs"
-DELETED_LOG_DIR = "deleted_logs"
+_HERE = Path(__file__).resolve().parent
+_ROOT = _HERE.parent
+_LOG_DIR = _ROOT / "logging"
+
+HISTORY_FILE = str(_LOG_DIR / "moderation_history.json")
+LOG_INDEX_FILE = str(_LOG_DIR / "verification_logs.json")
+NOTES_FILE = str(_LOG_DIR / "mod_notes.json")
+WATCHLIST_FILE = str(_LOG_DIR / "watchlist.json")
+LOG_CONFIG_FILE = str(_LOG_DIR / "log_config.json")
+THREAD_INDEX_FILE = str(_LOG_DIR / "thread_index.json")
+VERIFICATION_CONFIG_FILE = str(_LOG_DIR / "verification_config.json")
+TICKET_PANEL_CONFIG_FILE = str(_LOG_DIR / "ticket_panel_config.json")
+AUTOMOD_CONFIG_FILE = str(_LOG_DIR / "automod_config.json")
+MEDIA_ONLY_FILE = str(_LOG_DIR / "media_only_channels.json")
+SELFPROMO_FILE = str(_LOG_DIR / "selfpromo_channels.json")
+MOD_CASES_FILE = str(_LOG_DIR / "mod_cases.json")
+MESSAGE_LOG_DIR = str(_LOG_DIR / "message_logs")
+DELETED_LOG_DIR = str(_LOG_DIR / "deleted_logs")
 MESSAGE_LOG_MAX_LINES = 5000
 THREAD_ROLLOVER_LIMIT = 1000
 BUFFER_FLUSH_INTERVAL = 5.0

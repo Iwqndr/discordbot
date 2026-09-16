@@ -1,4 +1,11 @@
 import os
+import sys
+
+# Source files live in referenced/; main.py stays at the repository root as
+# the entry point. Putting that folder on the path lets every module import
+# its neighbours by their plain names.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "referenced"))
+import os
 import logging
 import threading
 import socket

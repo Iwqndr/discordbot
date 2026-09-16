@@ -20,7 +20,7 @@ from flask import jsonify, request
 
 from console import info, warn
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_COMMIT_MESSAGE = "new update"
 
 IGNORED_DIRS = {
@@ -438,6 +438,119 @@ def _repo_stats() -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# SYNC RULES — which files the push is allowed to send
+# ---------------------------------------------------------------------------
+
+SETTINGS_PATH = PROJECT_ROOT / "logging" / "github_settings.json"
+
+KNOWN_FILE_NAMES = {
+    ".env.example", ".gitignore", "main.py", "requirements.txt", "README.md",
+}
+KNOWN_EXTENSIONS = (
+    ".py", ".pyw", ".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx",
+    ".json", ".sql", ".md", ".bat", ".ps1", ".sh", ".yml", ".yaml", ".toml",
+    ".cfg", ".ini", ".txt", ".example",
+)
+
+
+def load_settings() -> dict:
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            return {"keep": [], "updated_at": 0}
+        keep = data.get("keep")
+        return {
+            "keep": [str(p) for p in keep] if isinstance(keep, list) else [],
+            "updated_at": float(data.get("updated_at") or 0),
+        }
+    except FileNotFoundError:
+        return {"keep": [], "updated_at": 0}
+    except Exception as exc:
+        warn(f"Could not read {SETTINGS_PATH.name}: {exc}")
+        return {"keep": [], "updated_at": 0}
+
+
+def save_settings(keep: list) -> dict:
+    clean = sorted({str(p).strip().replace("\\", "/") for p in keep if str(p).strip()})
+    data = {"keep": clean, "updated_at": time.time()}
+    try:
+        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(SETTINGS_PATH) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+        os.replace(tmp, SETTINGS_PATH)
+    except Exception as exc:
+        warn(f"Could not write {SETTINGS_PATH.name}: {exc}")
+    return data
+
+
+def _sensible_default(rel: str) -> bool:
+    """Propose which files look like source worth pushing."""
+    if rel.startswith("logging/"):
+        return False
+    if rel.startswith(".freebuff/") or rel.startswith("scratch/"):
+        return False
+    if rel.endswith(".tmp") or ".TMP" in rel:
+        return False
+    name = rel.split("/")[-1]
+    return name in KNOWN_FILE_NAMES or rel.lower().endswith(KNOWN_EXTENSIONS)
+
+
+def _allowed_files() -> list | None:
+    """The stored allow-list, or None when no rules are saved yet."""
+    keep = load_settings().get("keep") or []
+    return keep or None
+
+
+def _repo_files() -> list:
+    """Every file git would actually consider: tracked plus untracked."""
+    res = _run_git("ls-files", "--cached", "--others", "--exclude-standard", "-z")
+    if res.returncode != 0:
+        return []
+    seen = []
+    for raw in res.stdout.split("\0"):
+        rel = raw.strip().replace("\\", "/")
+        if not rel or rel in seen:
+            continue
+        seen.append(rel)
+    return sorted(seen)
+
+
+def _sync_view() -> dict:
+    tracked = set(_list_tracked_files())
+    changed = {f["path"] for f in _changed_files()}
+    settings = load_settings()
+    keep = set(settings.get("keep") or [])
+
+    files = []
+    for rel in _repo_files():
+        kept = rel in keep if keep else _sensible_default(rel)
+        files.append({
+            "path": rel,
+            "keep": kept,
+            "suggest": _sensible_default(rel),
+            "tracked": rel in tracked,
+            "changed": rel in changed,
+        })
+    return {
+        "setup": True,
+        "files": files,
+        "keep": sorted(keep),
+        "rules_saved": bool(keep),
+        "changed_at": settings.get("updated_at") or 0,
+    }
+
+
+def _unpushed_changes(allowed: list | None) -> list:
+    """Changed files the allow-list is holding back from the next commit."""
+    if allowed is None:
+        return []
+    allowed_set = set(allowed)
+    return [f["path"] for f in _changed_files() if f["path"] not in allowed_set]
+
+
 def perform_git_push(commit_message: str, remote_name: str,
                      files: list | None = None) -> GitResult:
     if not _is_git_repo():
@@ -452,8 +565,15 @@ def perform_git_push(commit_message: str, remote_name: str,
     if not _has_changes():
         return GitResult(success=True, message="No changes to commit — everything is already pushed.")
 
-    if files:
-        r = _run_git("add", "--", *[f for f in files if f], check=True)
+    allowed = files if files is not None else _allowed_files()
+    if allowed:
+        # An allow-listed file that no longer exists still needs its deletion
+        # staged, or the repo would show it as deleted forever.
+        removed = [p for p in allowed
+                   if p and not (PROJECT_ROOT / p).exists() and p in set(_list_tracked_files())]
+        r = _run_git("add", "--", *[f for f in allowed if f and f not in removed], check=True)
+        if r.returncode == 0 and removed:
+            r = _run_git("rm", "--cached", "--quiet", "--ignore-unmatch", "--", *removed, check=True)
     else:
         r = _run_git("add", ".", check=True)
 
@@ -1163,6 +1283,11 @@ footer code {
       <span>Files</span>
       <span class="count" id="filesCount">0</span>
     </button>
+    <button class="tab" data-tab="sync" data-tip="Choose which files are allowed to go to GitHub">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+      <span>Sync</span>
+      <span class="count" id="keepCount">0</span>
+    </button>
     <button class="tab" data-tab="history" data-tip="Recent commits on this branch">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
       <span>History</span>
@@ -1256,6 +1381,24 @@ footer code {
         <button class="btn sm" id="filesNone" data-tip="Unmark every file">Clear all</button>
       </div>
       <div class="file-list" id="fileList"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-sync">
+    <div class="card">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        What goes to GitHub
+      </div>
+      <div class="card-sub" id="syncSub">Tick a file to allow it in the next push. Unticked files are never staged, committed or pushed. Save once and every future push uses these rules.</div>
+      <div class="btn-row">
+        <input class="input" id="syncFilter" placeholder="Filter files..." style="max-width:240px" data-tip="Type to narrow the list">
+        <button class="btn sm" id="syncAll" data-tip="Allow every file">Select all</button>
+        <button class="btn sm" id="syncNone" data-tip="Allow nothing — push becomes a no-op">Clear all</button>
+        <button class="btn sm" id="syncDefaults" data-tip="Re-tick the files that look like source code">Suggest defaults</button>
+        <button class="btn" id="syncSave" data-tip="Write these rules to disk. Later pushes use them automatically.">Save rules</button>
+      </div>
+      <div class="file-list" id="syncList"></div>
     </div>
   </div>
 
@@ -1640,6 +1783,90 @@ document.getElementById("filesNone").onclick = () => {
   document.querySelectorAll(".file-row").forEach(row => row.classList.remove("on"));
 };
 
+/* ---------------------------------------------------------------
+   SYNC RULES — the allow-list every push obeys
+   --------------------------------------------------------------- */
+state.syncRows = [];
+state.syncKeep = new Set();
+
+function syncRender() {
+  const el = document.getElementById("syncList");
+  const filter = (document.getElementById("syncFilter").value || "").toLowerCase();
+  const rows = state.syncRows.filter(r => !filter || r.path.toLowerCase().includes(filter));
+
+  document.getElementById("keepCount").textContent = state.syncKeep.size;
+
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty"><div class="t">No files</div>' +
+      '<div class="s">Nothing in the repository matches that filter.</div></div>';
+    return;
+  }
+
+  el.innerHTML = rows.map((r, i) => {
+    const on = state.syncKeep.has(r.path);
+    return '<div class="file-row ' + (on ? "on" : "") + '" data-path="' + esc(r.path) + '" style="--i:' + i + '" data-tip="' + esc(r.path) + '">' +
+      '<div class="file-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' +
+      '<span class="file-status ' + (r.changed ? "modified" : (r.tracked ? "clean" : "untracked")) + '">' +
+        (r.changed ? "changed" : (r.tracked ? "tracked" : "new")) + '</span>' +
+      '<span class="file-path">' + esc(r.path) + '</span>' +
+      '</div>';
+  }).join("");
+
+  el.querySelectorAll(".file-row").forEach(row => {
+    row.onclick = () => {
+      const path = row.dataset.path;
+      if (state.syncKeep.has(path)) state.syncKeep.delete(path);
+      else state.syncKeep.add(path);
+      row.classList.toggle("on", state.syncKeep.has(path));
+      document.getElementById("keepCount").textContent = state.syncKeep.size;
+    };
+  });
+}
+
+async function loadSync() {
+  const el = document.getElementById("syncList");
+  try {
+    const data = await getJSON("/api/git/keep");
+    state.syncRows = data.files || [];
+    state.syncKeep = new Set(state.syncRows.filter(r => r.keep).map(r => r.path));
+    document.getElementById("syncSub").textContent = data.rules_saved
+      ? "Saved rules are active. Every push stages only the ticked files below."
+      : "No rules saved yet — the push currently sends everything. Tick the files you want to keep sending, then Save rules.";
+    syncRender();
+  } catch (e) {
+    el.innerHTML = '<div class="empty"><div class="t">Could not load files</div><div class="s">' + esc(e.message) + '</div></div>';
+  }
+}
+
+async function saveSync() {
+  const btn = document.getElementById("syncSave");
+  btn.disabled = true;
+  const { ok, data } = await postJSON("/api/git/keep", { keep: Array.from(state.syncKeep).sort() });
+  btn.disabled = false;
+  if (ok && data.success) {
+    toast(data.message || "Rules saved.", "ok");
+    consoleLine("SYNC", data.message || "Rules saved", "ok");
+    loadSync();
+  } else {
+    toast((data && (data.error || data.message)) || "Could not save rules.", "err");
+  }
+}
+
+document.getElementById("syncSave").onclick = saveSync;
+document.getElementById("syncFilter").oninput = syncRender;
+document.getElementById("syncAll").onclick = () => {
+  state.syncRows.forEach(r => state.syncKeep.add(r.path));
+  syncRender();
+};
+document.getElementById("syncNone").onclick = () => {
+  state.syncKeep.clear();
+  syncRender();
+};
+document.getElementById("syncDefaults").onclick = () => {
+  state.syncKeep = new Set(state.syncRows.filter(r => r.suggest).map(r => r.path));
+  syncRender();
+};
+
 async function openDiff(path) {
   const modal = document.getElementById("diffModal");
   const body = document.getElementById("diffBody");
@@ -1841,6 +2068,10 @@ async function push() {
     consoleLine("SUCCESS", "Push complete", "succ");
     consoleFinish(true);
     toast(data.message || "Pushed.", "ok");
+    if (data.held_back && data.held_back.length) {
+      consoleLine("SKIP", data.held_back.length + " file(s) held back by your Sync rules", "err");
+      toast(data.held_back.length + " changed file(s) were not sent — see the Sync tab.", "err");
+    }
     state.selectedFiles.clear();
     refreshAll();
   } else if (data.leaks && data.leaks.length) {
@@ -1911,6 +2142,7 @@ document.addEventListener("keydown", (e) => {
 function refreshAll() {
   loadRepoInfo();
   loadFiles();
+  loadSync();
   loadHistory();
   loadBranches();
   loadStats();
@@ -2003,7 +2235,11 @@ def register(app: flask.Flask) -> None:
             }), 400
 
         status = 200 if result.success else 500
-        return jsonify({"success": result.success, "message": result.message}), status
+        return jsonify({
+            "success": result.success,
+            "message": result.message,
+            "held_back": _unpushed_changes(files if files is not None else _allowed_files()),
+        }), status
 
     @app.post("/api/git/pull")
     def api_git_pull():
@@ -2055,5 +2291,25 @@ def register(app: flask.Flask) -> None:
                 "error": (r1.stderr or r2.stderr or "Discard failed.").strip(),
             }), 500
         return jsonify({"success": True, "message": "Working tree reset."})
+
+    @app.get("/api/git/keep")
+    def api_git_keep():
+        if not _is_git_repo():
+            return jsonify({"setup": False, "reason": "Git repository not initialized."})
+        return jsonify(_sync_view())
+
+    @app.post("/api/git/keep")
+    def api_git_keep_save():
+        payload = request.get_json(silent=True) or {}
+        keep = payload.get("keep")
+        if not isinstance(keep, list):
+            return jsonify({"success": False, "error": "Expected a list of paths."}), 400
+        data = save_settings(keep)
+        info(f"GitHub sync rules saved ({len(data['keep'])} file(s) selected).")
+        return jsonify({
+            "success": True,
+            "keep": data["keep"],
+            "message": f"Saved — {len(data['keep'])} file(s) will be pushed.",
+        })
 
     info("GitHub pusher routes registered (/git)")
