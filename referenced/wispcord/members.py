@@ -118,6 +118,10 @@ WORK_COOLDOWN_UNTIL = {}
 MARRIAGE_REWARDED = set()
 LAST_PASSIVE_PAYOUT = {}
 
+# uid -> checksum of the last economy row pushed to Supabase, so an unchanged
+# member is not re-sent on every sweep.
+_ECONOMY_DIRTY = {}
+
 LUCKY_CHANCE = 0.05
 QWORK_SECONDS = 120
 QWORK_COOLDOWN = 300
@@ -2987,23 +2991,32 @@ async def heartbeat():
     mirror_economy()
 
 
-def mirror_economy() -> None:
-    """Push every economy record to the `economy` table.
+def mirror_economy(force: bool = False) -> None:
+    """Push economy records to the `economy` table, but only what changed.
 
     The JSON file stays the source of truth; this is a read-only mirror so the
     member site can show balances and levels. A failure is logged and skipped,
     because the bot has to keep running even when the site cannot be reached.
+
+    Rows are checksummed and skipped when unchanged, so a quiet server costs one
+    small request per pass instead of one row per member every time.
     """
+    global _ECONOMY_DIRTY
+
     if not (SUPABASE_URL and SUPABASE_SERVICE_KEY):
         return
 
-    rows = []
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    rows = []
+    seen = set()
+
     for uid, rec in list(economy.data.items()):
         if not isinstance(rec, dict) or not str(uid).isdigit():
             continue
-        rows.append({
-            "user_id": str(uid),
+        key = str(uid)
+        seen.add(key)
+        row = {
+            "user_id": key,
             "balance": int(rec.get("balance", 0)),
             "bank": int(rec.get("bank", 0)),
             "xp": int(rec.get("xp", 0)),
@@ -3012,7 +3025,20 @@ def mirror_economy() -> None:
             "losses": int(rec.get("losses", 0)),
             "streak": int(rec.get("streak", 0)),
             "updated_at": now,
-        })
+        }
+        digest = hashlib.sha256(
+            f"{row['balance']}|{row['bank']}|{row['xp']}|{row['level']}|"
+            f"{row['wins']}|{row['losses']}|{row['streak']}".encode("utf-8")
+        ).hexdigest()
+        if not force and _ECONOMY_DIRTY.get(key) == digest:
+            continue
+        _ECONOMY_DIRTY[key] = digest
+        rows.append(row)
+
+    # Forget records for people who no longer have an entry, so the cache cannot
+    # grow forever.
+    for gone in [k for k in _ECONOMY_DIRTY if k not in seen]:
+        _ECONOMY_DIRTY.pop(gone, None)
 
     if not rows:
         return

@@ -4154,7 +4154,10 @@ const hub = {
   tickets: {},
   unread: {},
   openTicket: null,
-  busy: false
+  busy: false,
+  /* The member bot mirrors its economy into Supabase once a minute; /api/me
+     hands us that row so the dashboard can show coins and level. */
+  economy: null
 };
 
 const ticket = { topic: null, step: 0, answers: {}, attachments: [], uploading: 0 };
@@ -4331,9 +4334,11 @@ async function loadMe() {
     const res = await fetch("/api/me");
     const data = await res.json();
     hub.oauthReady = !!data.oauth_ready;
+    hub.economy = data.economy || null;
     setUser(data.user || null, data.open_count || 0);
   } catch (err) {
     hub.oauthReady = false;
+    hub.economy = null;
   }
 }
 
@@ -7156,7 +7161,51 @@ function dashProfilePanel() {
     </div>`;
 
   return section("user", "Identity & Customization", identity) +
+         economySection() +
          section("link", "Shortcuts & Quick Links", shortcuts);
+}
+
+/* The bot mirrors its economy into Supabase once a minute, so this is a live
+   read of what `>balance` would show in Discord. `hub.economy` is null until
+   the bot has published a row for this account. */
+function economySection() {
+  const e = hub.economy;
+  if (!e) {
+    return section(
+      "coins",
+      "Economy",
+      dashEmpty(
+        "No economy record yet",
+        "Run any economy command in Discord, for example `>daily` or `>balance`, and your coins show up here within a minute.",
+        "database"
+      )
+    );
+  }
+
+  const coins = "\u{1FA99}";
+  const next = 50 * (e.level + 1) ** 2;
+  const floor = 50 * e.level ** 2;
+  const into = Math.max(0, e.xp - floor);
+  const span = Math.max(1, next - floor);
+  const pct = Math.min(100, Math.round((into / span) * 100));
+  const record = e.wins + e.losses > 0
+    ? Math.round((e.wins / (e.wins + e.losses)) * 100) + "% win rate"
+    : "no games played yet";
+
+  const body = `
+    <div class="dash-metrics">
+      <div class="dash-metric"><b>${Number(e.total || 0).toLocaleString()}</b><span>total ${coins}</span></div>
+      <div class="dash-metric"><b>${Number(e.balance || 0).toLocaleString()}</b><span>wallet</span></div>
+      <div class="dash-metric"><b>${Number(e.bank || 0).toLocaleString()}</b><span>bank</span></div>
+    </div>
+    <div class="dash-field">
+      <label>Level ${e.level} &middot; ${into.toLocaleString()} / ${span.toLocaleString()} xp</label>
+      <div class="prog-track"><div class="prog-fill" style="width:${pct}%"></div></div>
+    </div>
+    ${kv("Casino record", `${Number(e.wins || 0)}W / ${Number(e.losses || 0)}L &middot; ${record}`)}
+    ${e.streak > 0 ? kv("Daily streak", `${e.streak} day${e.streak === 1 ? "" : "s"}`) : ""}`;
+
+  return section("coins", "Economy", body);
 }
 
 function dashSecurityPanel() {
