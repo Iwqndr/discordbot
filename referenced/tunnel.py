@@ -36,6 +36,9 @@ DEFAULT_SUBDOMAIN = "jamesheston"
 _process = None
 _public_url = None
 _lock = threading.Lock()
+# Last few lines cloudflared/localtunnel printed, kept so a start that dies
+# instantly can report why instead of just "it failed".
+_early_output: list = []
 
 
 def subdomain() -> str:
@@ -93,19 +96,54 @@ def _unpublish() -> None:
         pass
 
 
+def _safe(text: str) -> str:
+    """Strip characters the host console cannot encode.
+
+    localtunnel prints a `●` in its ready banner. On a Windows console using
+    cp1252 that raises UnicodeEncodeError *inside* the logging call, which
+    aborts the reader thread before it ever parses the URL — so the tunnel looks
+    like it silently failed. Anything unprintable is replaced here instead.
+    """
+    try:
+        text.encode(sys.stdout.encoding or "utf-8")
+        return text
+    except (UnicodeEncodeError, LookupError):
+        return text.encode("ascii", "replace").decode("ascii")
+
+
 def _read_output(process: subprocess.Popen) -> None:
     """Watch the client's output for the address it was given."""
     stream = process.stdout or process.stderr
     if stream is None:
         return
     for raw in iter(stream.readline, ""):
-        line = raw.strip()
+        line = _safe(raw.strip())
         if not line:
             continue
         debug(f"localtunnel: {line}")
+        with _lock:
+            _early_output.append(line)
+            del _early_output[:-8]
         match = _URL_RE.search(line)
         if match and not public_url():
             _publish(match.group(0).rstrip("/"))
+
+
+def _npx_command() -> list:
+    """`npx` as an argv list that works on Windows.
+
+    On Windows `npx` is a `.cmd` shim, so `subprocess` needs `shell=True` to
+    find it — and with `shell=True` you cannot reliably redirect its output,
+    which is how the startup error gets swallowed. Resolving the shim and
+    calling it directly avoids both problems.
+    """
+    from shutil import which
+
+    for name in ("npx.cmd", "npx.exe", "npx"):
+        found = which(name)
+        if found:
+            return [found]
+    return ["npx"]
 
 
 def start(port: int) -> bool:
@@ -124,8 +162,8 @@ def start(port: int) -> bool:
     port_override = (os.getenv("LOCALTUNNEL_PORT") or "").strip()
     target = int(port_override) if port_override.isdigit() else port
 
-    args = [
-        "npx", "--yes", "localtunnel",
+    args = _npx_command() + [
+        "--yes", "localtunnel",
         "--port", str(target),
         "--subdomain", name,
     ]
@@ -136,11 +174,11 @@ def start(port: int) -> bool:
             args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
             errors="replace",
             bufsize=1,
-            shell=(sys.platform == "win32"),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
         )
     except Exception as exc:
@@ -153,15 +191,24 @@ def start(port: int) -> bool:
     info(f"Panel tunnel: starting https://{name}.loca.lt -> localhost:{target}")
     _publish(f"https://{name}.loca.lt")
 
-    # npx needs a moment on a cold cache; if it dies straight away, say so.
-    for _ in range(24):
+    # npx needs a moment on a cold cache; if it dies straight away the reason is
+    # in its output, so keep the first few lines to print.
+    early = []
+    deadline = time.time() + 8
+    while time.time() < deadline:
         if _process.poll() is not None:
             break
         time.sleep(0.25)
+        with _lock:
+            if _early_output and not early:
+                early = list(_early_output)
 
     if _process.poll() is not None:
-        warn("Panel tunnel exited immediately. Run `npx localtunnel --port "
-             f"{target}` by hand to see why.")
+        warn("Panel tunnel exited immediately. Output:")
+        for line in (early or _early_output)[:6]:
+            warn(f"    {line}")
+        warn("Run `npx localtunnel --port "
+             f"{target} --subdomain {name}` by hand to reproduce it.")
         _unpublish()
         return False
     return True
