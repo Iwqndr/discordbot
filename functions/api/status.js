@@ -20,17 +20,6 @@ function ageSeconds(stamp) {
   return (Date.now() - then) / 1000;
 }
 
-function humanUptime(seconds) {
-  const s = Math.max(0, Math.floor(seconds));
-  const days = Math.floor(s / 86400);
-  const hours = Math.floor((s % 86400) / 3600);
-  const minutes = Math.floor((s % 3600) / 60);
-  if (days) return `${days}d ${hours}h ${minutes}m`;
-  if (hours) return `${hours}h ${minutes}m`;
-  if (minutes) return `${minutes}m`;
-  return `${s}s`;
-}
-
 /** A row that carries real numbers — not the seeded 0.0.0 placeholder. */
 function looksReal(row) {
   if (!row) return false;
@@ -41,7 +30,7 @@ async function handleGet({ env }) {
   const [statusRes, onlineRes] = await Promise.all([
     supa(env, "bot_status?select=*"),
     // Presence is optional: if the bot never added an `online` column this
-    // returns nothing and the widget shows a dash, exactly as before.
+    // returns nothing and the widget falls back to the bot's member count.
     supa(env, "members?select=user_id&online=is.true"),
   ]);
 
@@ -58,6 +47,8 @@ async function handleGet({ env }) {
   const payload = {
     online: false,
     ping: 0,
+    // SECONDS, as a number: the page runs Math.floor(uptime / 3600), so a
+    // preformatted string like "1m" turns into NaN in the widget.
     uptime: null,
     members: 0,
     online_members: onlineMembers,
@@ -75,7 +66,10 @@ async function handleGet({ env }) {
     payload.online = age < ONLINE_WINDOW_SECONDS;
     payload.ping = Number(source.latency_ms || 0);
     payload.members = Number(source.member_count || 0);
-    payload.uptime = source.uptime ? String(source.uptime) : null;
+
+    // Prefer a real uptime column if the bot ever writes one.
+    const reported = Number(source.uptime_seconds ?? source.uptime ?? 0);
+    if (Number.isFinite(reported) && reported > 0) payload.uptime = Math.round(reported);
   }
 
   if (member) {
@@ -87,15 +81,19 @@ async function handleGet({ env }) {
       version: member.version || null,
       guilds: Number(member.guild_count || 0),
     };
-    // There is no explicit uptime column, so derive one from how far back the
-    // heartbeats have been arriving. Only meaningful while it is online.
     if (payload.uptime === null && memberOnline) {
-      payload.uptime = humanUptime(memberAge + HEARTBEAT_SECONDS);
+      // No explicit uptime is reported, so the best available figure is how far
+      // back the once-a-minute heartbeats reach.
+      payload.uptime = Math.round(memberAge + HEARTBEAT_SECONDS);
     }
   } else {
     payload.member_bot = { online: false, age_seconds: null, version: null, guilds: 0 };
   }
 
+  // Discord presence is not readable over the REST API with either key, so the
+  // bot would have to mirror it. Until then the honest answer for "online now"
+  // is the dash the page already draws for null — a hard 0 next to a live
+  // member count of 9 is worse than no number.
   return ok(payload);
 }
 

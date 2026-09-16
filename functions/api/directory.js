@@ -25,7 +25,13 @@ const COLUMNS = [
 ].join(",");
 
 async function handleGet({ env }) {
-  const res = await supa(env, `members?select=${COLUMNS}&order=display_name.asc`);
+  const [res, profileRes] = await Promise.all([
+    supa(env, `members?select=${COLUMNS}&order=display_name.asc`),
+    // The member page saves its own bio / name styling to member_profiles,
+    // which the bot never touches. Without this merge those changes stay
+    // invisible everywhere the roster is drawn.
+    supa(env, "member_profiles?select=user_id,bio,name_color,name_font,name_effect,show_nickname"),
+  ]);
 
   if (!res.ok || !Array.isArray(res.rows)) {
     // The page falls back to its own Supabase fetch (and then to an empty
@@ -33,25 +39,38 @@ async function handleGet({ env }) {
     return ok({ members: [] });
   }
 
-  const members = res.rows.map((row) => ({
-    user_id: String(row.user_id),
-    username: row.username || "",
-    display_name: row.display_name || row.username || "",
-    avatar_url: row.avatar_url || "",
-    banner_url: row.banner_url || "",
-    bio: row.bio || "",
-    joined_at: row.joined_at || null,
-    created_at: row.created_at || null,
-    bot: false,
-    roles: Array.isArray(row.roles)
-      ? row.roles.map((r) => ({
-          id: r?.id ? String(r.id) : undefined,
-          name: r?.name || "",
-          color: r?.color || null,
-          tier: typeof r?.tier === "number" ? r.tier : undefined,
-        }))
-      : [],
-  }));
+  const profiles = new Map();
+  if (profileRes.ok && Array.isArray(profileRes.rows)) {
+    for (const row of profileRes.rows) profiles.set(String(row.user_id), row);
+  }
+
+  const members = res.rows.map((row) => {
+    const profile = profiles.get(String(row.user_id)) || {};
+    return {
+      user_id: String(row.user_id),
+      username: row.username || "",
+      display_name: row.display_name || row.username || "",
+      avatar_url: row.avatar_url || "",
+      banner_url: row.banner_url || "",
+      // A bio the member wrote themselves wins over the bot-synced one.
+      bio: profile.bio || row.bio || "",
+      name_color: profile.name_color || "",
+      name_font: profile.name_font || "",
+      name_effect: profile.name_effect || "",
+      show_nickname: profile.show_nickname !== false,
+      joined_at: row.joined_at || null,
+      created_at: row.created_at || null,
+      bot: false,
+      roles: Array.isArray(row.roles)
+        ? row.roles.map((r) => ({
+            id: r?.id ? String(r.id) : undefined,
+            name: r?.name || "",
+            color: r?.color || null,
+            tier: typeof r?.tier === "number" ? r.tier : undefined,
+          }))
+        : [],
+    };
+  });
 
   return ok({ members });
 }
