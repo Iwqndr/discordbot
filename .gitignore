@@ -1,4 +1,4 @@
-.env
+﻿.env
 .env.*
 !.env.example
 
@@ -76,8 +76,9 @@ logging/run.md
 logging/github_settings.json
 
 # NOT ignored: templates/functions/. It is the Cloudflare Pages Functions
-# package, so it has to be pushable — the Sync tab lists it and Cloudflare
+# package, so it has to be pushable â€” the Sync tab lists it and Cloudflare
 # builds it. (Flask only ever looks up .html files here, so the folder is inert
 # on the bot side.)
 #
 # `pages/` also holds the package, plus schema.sql and the README.
+.wrangler/
