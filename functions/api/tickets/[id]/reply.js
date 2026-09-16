@@ -13,7 +13,7 @@ import {
 import { findTicket, ticketWithReplies } from "../../../_lib/tickets.js";
 import { supa } from "../../../_lib/core.js";
 
-async function onRequestPost({ request, env, params }) {
+async function handlePost({ request, env, params }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -54,4 +54,4 @@ async function onRequestPost({ request, env, params }) {
   return ok({ ticket: await ticketWithReplies(env, uid, fresh || row) });
 }
 
-export const onRequestPost = route("api/tickets/[id]/reply", onRequestPost);
+export const onRequestPost = route("api/tickets/[id]/reply", handlePost);

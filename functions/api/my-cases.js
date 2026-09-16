@@ -11,7 +11,7 @@ import {
   supa,
 } from "../_lib/core.js";
 
-async function onRequestGet({ request, env }) {
+async function handleGet({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Sign in with Discord to pick a case, or type the case id below.", 401);
 
@@ -38,4 +38,4 @@ async function onRequestGet({ request, env }) {
   return ok({ cases });
 }
 
-export const onRequestGet = route("api/my-cases", onRequestGet);
+export const onRequestGet = route("api/my-cases", handleGet);

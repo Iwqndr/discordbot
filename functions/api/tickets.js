@@ -51,7 +51,7 @@ async function repliesFor(env, uid, ticketIds) {
   return grouped;
 }
 
-async function onRequestGet({ request, env }) {
+async function handleGet({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -77,7 +77,7 @@ async function onRequestGet({ request, env }) {
   });
 }
 
-async function onRequestPost({ request, env }) {
+async function handlePost({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -131,6 +131,6 @@ async function onRequestPost({ request, env }) {
   return ok({ ticket: shapeTicket(stored) });
 }
 
-export const onRequestGet = route("api/tickets", onRequestGet);
+export const onRequestGet = route("api/tickets", handleGet);
 
-export const onRequestPost = route("api/tickets", onRequestPost);
+export const onRequestPost = route("api/tickets", handlePost);

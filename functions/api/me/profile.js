@@ -16,7 +16,7 @@ import {
 
 const FIELDS = ["bio", "show_nickname", "name_color", "name_font", "name_effect"];
 
-async function onRequestGet({ request, env }) {
+async function handleGet({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -29,7 +29,7 @@ async function onRequestGet({ request, env }) {
   return ok({ profile: row ? pick(row) : null });
 }
 
-async function onRequestPost({ request, env }) {
+async function handlePost({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -59,6 +59,6 @@ function pick(source) {
   return out;
 }
 
-export const onRequestGet = route("api/me/profile", onRequestGet);
+export const onRequestGet = route("api/me/profile", handleGet);
 
-export const onRequestPost = route("api/me/profile", onRequestPost);
+export const onRequestPost = route("api/me/profile", handlePost);

@@ -24,7 +24,7 @@ const COLUMNS = [
   "created_at",
 ].join(",");
 
-async function onRequestGet({ env }) {
+async function handleGet({ env }) {
   const res = await supa(env, `members?select=${COLUMNS}&order=display_name.asc`);
 
   if (!res.ok || !Array.isArray(res.rows)) {
@@ -56,4 +56,4 @@ async function onRequestGet({ env }) {
   return ok({ members });
 }
 
-export const onRequestGet = route("api/directory", onRequestGet);
+export const onRequestGet = route("api/directory", handleGet);

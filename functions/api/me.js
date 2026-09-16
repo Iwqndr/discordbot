@@ -22,7 +22,7 @@ async function openTicketCount(env, uid) {
   return res.rows.length;
 }
 
-async function onRequestGet({ request, env }) {
+async function handleGet({ request, env }) {
   const oauthReady = hasEnv(env, "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SESSION_SECRET");
   const uid = await currentUser(request, env);
 
@@ -62,4 +62,4 @@ async function onRequestGet({ request, env }) {
   });
 }
 
-export const onRequestGet = route("api/me", onRequestGet);
+export const onRequestGet = route("api/me", handleGet);

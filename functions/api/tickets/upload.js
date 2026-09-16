@@ -38,7 +38,7 @@ function extensionFor(type) {
   }
 }
 
-async function onRequestPost({ request, env }) {
+async function handlePost({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -91,4 +91,4 @@ export function onRequestOptions() {
   });
 }
 
-export const onRequestPost = route("api/tickets/upload", onRequestPost);
+export const onRequestPost = route("api/tickets/upload", handlePost);

@@ -17,7 +17,7 @@ function ageSeconds(stamp) {
   return (Date.now() - then) / 1000;
 }
 
-async function onRequestGet({ env }) {
+async function handleGet({ env }) {
   const res = await supa(env, "bot_status?select=*");
 
   if (!res.ok || !Array.isArray(res.rows)) {
@@ -69,4 +69,4 @@ async function onRequestGet({ env }) {
   return ok(payload);
 }
 
-export const onRequestGet = route("api/status", onRequestGet);
+export const onRequestGet = route("api/status", handleGet);

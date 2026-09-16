@@ -15,7 +15,7 @@ import {
   supa,
 } from "../../_lib/core.js";
 
-async function onRequestGet({ request, env }) {
+async function handleGet({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -69,4 +69,4 @@ async function onRequestGet({ request, env }) {
   });
 }
 
-export const onRequestGet = route("api/me/history", onRequestGet);
+export const onRequestGet = route("api/me/history", handleGet);

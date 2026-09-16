@@ -14,7 +14,7 @@ import {
   supa,
 } from "../_lib/core.js";
 
-async function onRequestGet({ env }) {
+async function handleGet({ env }) {
   const res = await supa(env, "staff_titles?select=*&order=priority.desc");
 
   if (!res.ok || !Array.isArray(res.rows)) {
@@ -38,4 +38,4 @@ async function onRequestGet({ env }) {
   return ok({ titles });
 }
 
-export const onRequestGet = route("api/staff-titles", onRequestGet);
+export const onRequestGet = route("api/staff-titles", handleGet);

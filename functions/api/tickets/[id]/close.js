@@ -11,7 +11,7 @@ import {
 } from "../../../_lib/core.js";
 import { findTicket, patchTicket, ticketWithReplies } from "../../../_lib/tickets.js";
 
-async function onRequestPost({ request, env, params }) {
+async function handlePost({ request, env, params }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -31,4 +31,4 @@ async function onRequestPost({ request, env, params }) {
   return ok({ ticket: await ticketWithReplies(env, uid, updated) });
 }
 
-export const onRequestPost = route("api/tickets/[id]/close", onRequestPost);
+export const onRequestPost = route("api/tickets/[id]/close", handlePost);

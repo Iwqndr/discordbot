@@ -11,7 +11,7 @@ import {
 } from "../../_lib/core.js";
 import { findTicket, ticketWithReplies } from "../../_lib/tickets.js";
 
-async function onRequestGet({ request, env, params }) {
+async function handleGet({ request, env, params }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -24,4 +24,4 @@ async function onRequestGet({ request, env, params }) {
   return ok({ ticket: await ticketWithReplies(env, uid, row), open_count: row.status === "closed" ? 0 : 1 });
 }
 
-export const onRequestGet = route("api/tickets/[id]", onRequestGet);
+export const onRequestGet = route("api/tickets/[id]", handleGet);
