@@ -597,8 +597,9 @@ def perform_git_push(commit_message: str, remote_name: str,
             listing = ", ".join(held[:6]) + ("…" if len(held) > 6 else "")
             return GitResult(
                 success=False,
-                message=(f"Nothing to commit — the only changed files are held back by your Sync "
-                         f"rules: {listing}. Tick them in the Sync tab to send them."),
+                message=(f"Nothing to commit — {len(held)} changed file(s) are not in your Sync "
+                         f"rules, so they were held back: {listing}. Open the Sync tab, tick them, "
+                         f"press Save rules, then push again."),
             )
         return GitResult(success=True, message="Nothing to commit — everything is already pushed.")
 
