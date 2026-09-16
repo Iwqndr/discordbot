@@ -91,17 +91,20 @@ export async function tunnelBase(env) {
   const res = await supa(env, "bot_status?id=eq.tunnel&select=version,updated_at&limit=1");
   const row = Array.isArray(res.rows) ? res.rows[0] : null;
   const base = String(row?.version ?? "").trim().replace(/\/+$/, "");
-  return base || null;
+  if (!base) return null;
+  return { url: base, seenAt: row?.updated_at || null };
 }
 
 export async function proxyToPanel(request, env, { stripPrefix, base = null }) {
   const tunnel = base || (await tunnelBase(env));
   if (!tunnel) {
-    return fail("hi", 503);
+    return offlineResponse(503, "The host machine has not published a tunnel address yet.");
   }
+  const tunnelUrl = typeof tunnel === "string" ? tunnel : tunnel.url;
+  const seenAt = typeof tunnel === "string" ? null : tunnel.seenAt;
 
   const inbound = new URL(request.url);
-  const target = `${tunnel}${inbound.pathname.replace(stripPrefix, "") || "/"}${inbound.search}`;
+  const target = `${tunnelUrl}${inbound.pathname.replace(stripPrefix, "") || "/"}${inbound.search}`;
 
   const headers = new Headers();
   for (const [key, value] of request.headers) {
@@ -122,16 +125,16 @@ export async function proxyToPanel(request, env, { stripPrefix, base = null }) {
     upstream = await fetch(target, init);
   } catch (err) {
     console.error(`[panel] upstream failed for ${target}: ${err}`);
-    return offlineResponse();
+    return offlineResponse(502, describe(tunnelUrl, seenAt, String(err)));
   }
 
-  // A 502/503 from loca.lt means the tunnel registration is gone — the machine
-  // is off, or the tunnel is still starting. Passing that through shows the
-  // browser a bare "Bad gateway", which says nothing; this explains it and
-  // says where to look.
-  if (upstream.status === 502 || upstream.status === 503) {
+  // 5xx from the tunnel provider means its registration is gone — the machine is
+  // off, or the tunnel is still starting. Passing that through shows the browser
+  // a bare "Bad gateway", which says nothing; this explains it and says where
+  // to look.
+  if (upstream.status >= 500) {
     console.error(`[panel] tunnel returned ${upstream.status} for ${target}`);
-    return offlineResponse(upstream.status);
+    return offlineResponse(503, describe(tunnelUrl, seenAt, `upstream HTTP ${upstream.status}`));
   }
 
   const out = new Headers();
@@ -161,8 +164,24 @@ export async function proxyToPanel(request, env, { stripPrefix, base = null }) {
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }
 
+/** One short line of context, so a failure is diagnosable from the page. */
+function describe(url, seenAt, reason) {
+  let host = "none";
+  try {
+    host = url ? new URL(url).host : "none";
+  } catch {
+    host = url || "none";
+  }
+  let when = "never";
+  if (seenAt) {
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(seenAt).getTime()) / 1000));
+    when = seconds < 90 ? `${seconds}s ago` : `${Math.round(seconds / 60)}m ago`;
+  }
+  return `${host} · last seen ${when} · ${reason}`;
+}
+
 /** A page a person can read, rather than a JSON blob or a raw gateway error. */
-function offlineResponse(status = 503) {
+function offlineResponse(status = 503, detail = "") {
   const html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -173,7 +192,7 @@ function offlineResponse(status = 503) {
          font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;
          background:#f5f3ef; color:#2b2723; }
   @media (prefers-color-scheme: dark) { body { background:#1a1815; color:#efe9e0; } }
-  .card { max-width:430px; padding:32px 30px; border-radius:18px;
+  .card { max-width:460px; padding:32px 30px; border-radius:18px;
           background:rgba(255,255,255,.75); border:1px solid rgba(0,0,0,.07);
           box-shadow:0 12px 40px rgba(0,0,0,.08); text-align:center; }
   @media (prefers-color-scheme: dark) { .card { background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.09); } }
@@ -181,11 +200,15 @@ function offlineResponse(status = 503) {
   p { margin:0 0 8px; opacity:.8; }
   code { background:rgba(0,0,0,.06); padding:2px 7px; border-radius:6px; font-size:13px; }
   @media (prefers-color-scheme: dark) { code { background:rgba(255,255,255,.09); } }
+  .detail { margin-top:16px; padding-top:14px; border-top:1px solid rgba(0,0,0,.07);
+            font-size:11.5px; opacity:.55; word-break:break-all; }
+  @media (prefers-color-scheme: dark) { .detail { border-top-color:rgba(255,255,255,.1); } }
 </style></head>
 <body><div class="card">
   <h1>The admin panel is offline</h1>
-  <p>The panel runs on potatoes and chicken, so the tunnel to it is not answering.</p>
+  <p>The panel runs on the host machine, and the tunnel to it is not answering.</p>
   <p>Start <code>main.py</code> on that machine and reload this page.</p>
+  ${detail ? `<div class="detail">${detail}</div>` : ""}
 </div></body></html>`;
 
   return new Response(html, {
