@@ -270,11 +270,14 @@ def start(port: int) -> bool:
         return False
 
     wanted = (os.getenv("TUNNEL_PROVIDER") or "").strip().lower()
-    order = [wanted] if wanted in ("cloudflared", "localtunnel") else ["cloudflared", "localtunnel"]
-    if wanted == "localtunnel":
-        order = ["localtunnel"]
-    elif wanted == "cloudflared":
-        order = ["cloudflared"]
+    order = ["cloudflared", "localtunnel"]
+    if wanted in ("cloudflared", "localtunnel"):
+        order = [wanted]
+
+    # Clear any client left over from a previous run before starting a new one,
+    # so exactly one tunnel is ever alive and the published address belongs to
+    # the process we are about to watch.
+    kill_orphans()
 
     for kind in order:
         if kind == "cloudflared":
@@ -420,12 +423,74 @@ def _health_loop(port: int) -> None:
 
 
 def stop() -> None:
+    """Kill the tunnel client and everything it spawned.
+
+    `terminate()` alone is not enough on Windows: `npx` starts localtunnel as a
+    child process, and killing only the shim leaves the real client holding the
+    connection. That is how three cloudflared clients ended up running at once,
+    each with its own tunnel, after a few restarts.
+    """
     global _process
-    if _process is None:
+    process = _process
+    if process is None:
+        return
+    _process = None
+    _kill_tree(process)
+    _unpublish()
+
+
+def _kill_tree(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
         return
     try:
-        _process.terminate()
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=15,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        else:
+            process.terminate()
     except Exception:
         pass
-    _process = None
-    _unpublish()
+    try:
+        process.wait(timeout=5)
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def kill_orphans() -> int:
+    """Kill tunnel clients left behind by an earlier run of this script.
+
+    `close_previous_instances()` in main.py only sees copies of main.py, so a
+    tunnel from a crashed or killed run keeps its connection — and each stale
+    client holds a *different* public address, which is why the site could point
+    at a tunnel that no longer belongs to the running process.
+    """
+    if sys.platform != "win32":
+        return 0
+
+    killed = 0
+    for image in ("cloudflared.exe", "cloudflared"):
+        try:
+            result = subprocess.run(
+                ["taskkill", "/F", "/IM", image],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=20,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except Exception:
+            continue
+        if result.returncode == 0:
+            killed += 1
+            debug(f"tunnel: closed a leftover {image}")
+    if killed:
+        info(f"Panel tunnel: closed {killed} leftover tunnel client(s) from a previous run.")
+    return killed

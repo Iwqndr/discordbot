@@ -40,8 +40,15 @@ function keyPage({ wrong = false } = {}) {
          font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
   @media (prefers-color-scheme: dark) { body { background:#1a1815; color:#efe9e0; } }
 
-  /* The whole control stays hidden until the pointer comes near. */
+  /* The whole control stays hidden until the pointer comes near, but a faint
+     hint stays on screen so the page never looks like it failed to load. */
   .keyzone { position:fixed; left:0; bottom:0; width:240px; height:100px; z-index:50; }
+  .hint    { position:absolute; left:16px; bottom:16px; font-size:12px;
+             color:rgba(0,0,0,.28); letter-spacing:.02em; user-select:none;
+             transition:opacity .16s ease; }
+  @media (prefers-color-scheme: dark) { .hint { color:rgba(255,255,255,.3); } }
+  .keyzone:hover .hint, .keyzone:focus-within .hint { opacity:0; }
+
   .keybox  { position:absolute; left:14px; bottom:14px; display:flex; gap:6px;
              opacity:0; transform:translateY(6px); pointer-events:none;
              transition:opacity .18s ease, transform .18s ease; }
@@ -69,6 +76,7 @@ function keyPage({ wrong = false } = {}) {
 <body>
   <div class="keyzone">
     <div class="wrong">That key was not right.</div>
+    <div class="hint">Enter Key</div>
     <form class="keybox" method="POST" action="/dashboard" autocomplete="off">
       <input type="password" name="key" placeholder="Enter Key" aria-label="Enter Key"${wrong ? " autofocus" : ""}>
       <button type="submit">Go</button>
