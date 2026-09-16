@@ -149,6 +149,16 @@ if __name__ == "__main__":
     info(f"Staff panel:   http://{local_ip}:{DASHBOARD_PORT}/admin")
     info(f"GitHub pusher: http://{local_ip}:{DASHBOARD_PORT}/git")
 
+    # Give the panel a public address so jamesheston.pages.dev/dashboard can
+    # redirect to it. Best-effort: a failure here only means the panel stays
+    # reachable on this machine.
+    try:
+        import tunnel
+
+        tunnel.start(DASHBOARD_PORT)
+    except Exception as exc:
+        warn(f"Dashboard tunnel unavailable: {type(exc).__name__}: {exc}")
+
     # bot.run() blocks on Discord's event loop and is what keeps this process
     # alive. Without it __main__ returns immediately, Python exits, and the
     # daemon Flask thread is torn down with it -- the whole app "shuts down"
