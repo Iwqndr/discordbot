@@ -99,6 +99,13 @@ create table if not exists public.bot_status (
   latency_ms   integer default 0
 );
 
+-- Added after the first release, so an existing table needs the ALTER:
+-- `create table if not exists` does nothing to a table that is already there.
+-- The member bot sends uptime_seconds with every heartbeat and retries without
+-- it if the column is missing, so the heartbeat still lands either way — only
+-- the uptime display on the site depends on this.
+alter table public.bot_status add column if not exists uptime_seconds integer default 0;
+
 alter table public.bot_status enable row level security;
 
 -- The member page reads the 'member' row with the anon key to decide whether

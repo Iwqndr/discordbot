@@ -138,6 +138,13 @@ create policy "service full access member_tickets"
   with check (true);
 
 -- ---------------------------------------------------------------------------
+-- 3b. bot_status — column added after the first release
+--     The member bot sends uptime_seconds on every heartbeat. ALTER, not
+--     create: the table already exists on a live project.
+-- ---------------------------------------------------------------------------
+alter table public.bot_status add column if not exists uptime_seconds integer default 0;
+
+-- ---------------------------------------------------------------------------
 -- 4. member_profiles — the personal touches on the member page
 --    (bio, name colour, font, effect, nickname preference)
 -- ---------------------------------------------------------------------------
