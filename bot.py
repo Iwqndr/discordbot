@@ -44,6 +44,8 @@ from antiraid import (
     flush_all_buffers,
     register_verification_view,
     refresh_verification_panel,
+    register_ticket_panel_view,
+    refresh_ticket_panel,
     member_is_verified,
     send_punishment_dm,
     record_case,
@@ -59,6 +61,8 @@ TOKEN = DISCORD_TOKEN
 
 # Set once the persistent verification view has been re-attached after a restart.
 _verification_restored = False
+# Same idea for the ticket panel, which is its own persistent view.
+_ticket_panel_restored = False
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -91,7 +95,7 @@ STAFF_PERMS = (
     "administrator",
 )
 
-PUBLIC_COMMANDS = {"ping", "serverinfo", "userinfo", "avatar", "banner", "roleinfo", "channelinfo", "uptime", "help"}
+PUBLIC_COMMANDS = {"apply"}
 
 ROLES_BY_TIER = {
     "Owners": 100,
@@ -305,6 +309,20 @@ async def on_ready():
         else:
             warn("Verification panel could not be registered; run >verification again.")
 
+    # The ticket panel works the same way: the Create Ticket button is a
+    # persistent view, and the posted message is re-rendered from its own config
+    # so a dashboard edit survives a restart without redeploying.
+    global _ticket_panel_restored
+    if not _ticket_panel_restored:
+        _ticket_panel_restored = True
+        if register_ticket_panel_view(bot):
+            if await refresh_ticket_panel(bot):
+                info("Ticket panel restored with the saved configuration.")
+            else:
+                debug("Persistent ticket button registered (no stored panel to refresh).")
+        else:
+            warn("Ticket panel could not be registered; redeploy it from the owner panel.")
+
 
 @bot.event
 async def on_command_error(ctx: commands.Context, error):
@@ -414,18 +432,10 @@ def tier_header(title: str) -> str:
 
 HELP_CATEGORIES = [
     {
-        "name": "Utility",
+        "name": "Staff",
         "emoji": "\u2139",
         "commands": [
-            ("ping", "Check bot latency"),
-            ("serverinfo", "Info about this server"),
-            ("userinfo", "Info about a user"),
-            ("avatar", "Show a user's avatar"),
-            ("banner", "Show a user's banner"),
-            ("roleinfo", "Info about a role"),
-            ("channelinfo", "Info about a channel"),
-            ("uptime", "Show bot uptime"),
-            ("help", "Show this menu"),
+            ("help", "Show this menu (staff commands only)"),
             ("apply", "Apply to join the staff team"),
         ],
         "requires": None,
@@ -866,19 +876,7 @@ POSTHELP_TIERS = [
         "title": "MEMBERS",
         "color": (130, 130, 140),
         "commands": [
-            ("ping", "Check bot latency"),
-            ("serverinfo", "Info about this server"),
-            ("userinfo", "Info about a user"),
-            ("avatar", "Show a user's avatar"),
-            ("banner", "Show a user's banner"),
-            ("roleinfo", "Info about a role"),
-            ("channelinfo", "Info about a channel"),
-            ("uptime", "Show bot uptime"),
-            ("help", "Show your personal command list"),
             ("apply", "Apply to join the staff team"),
-            ("roll", "Roll dice (e.g. 2d20)"),
-            ("coinflip", "Flip a coin"),
-            ("8ball", "Ask the magic 8-ball"),
         ],
     },
 ]
@@ -1075,66 +1073,10 @@ async def posthelp(ctx: commands.Context, channel_id: int):
         pass
 
 
-@bot.command(name="ping")
-async def ping(ctx: commands.Context):
-    latency = 0 if math.isnan(bot.latency) else round(bot.latency * 1000)
-    await ctx.send(f"> Latency: **{latency}ms**")
-
-
-@bot.command(name="serverinfo")
-async def serverinfo(ctx: commands.Context):
-    g = ctx.guild
-    embed = discord.Embed(title=g.name, color=discord.Color.blurple())
-    if g.icon:
-        embed.set_thumbnail(url=g.icon.url)
-    embed.add_field(name="Owner", value=g.owner.mention if g.owner else "Unknown")
-    embed.add_field(name="ID", value=str(g.id))
-    embed.add_field(name="Members", value=str(g.member_count))
-    embed.add_field(name="Channels", value=str(len(g.channels)))
-    embed.add_field(name="Roles", value=str(len(g.roles)))
-    embed.add_field(name="Created", value=discord.utils.format_dt(g.created_at, "R"))
-    await ctx.send(embed=embed)
-
-
-@bot.command(name="userinfo")
-async def userinfo(ctx: commands.Context, member: discord.Member = None):
-    member = member or ctx.author
-    embed = discord.Embed(title=str(member), color=member.color)
-    embed.set_thumbnail(url=member.display_avatar.url)
-    embed.add_field(name="ID", value=str(member.id))
-    embed.add_field(name="Bot", value=str(member.bot))
-    embed.add_field(name="Joined", value=discord.utils.format_dt(member.joined_at, "R") if member.joined_at else "?")
-    embed.add_field(name="Created", value=discord.utils.format_dt(member.created_at, "R"))
-    roles = [r.mention for r in member.roles if r.name != "@everyone"]
-    embed.add_field(name="Roles", value=", ".join(roles[:10]) or "None", inline=False)
-    await ctx.send(embed=embed)
-
-
-@bot.command(name="avatar")
-async def avatar(ctx: commands.Context, member: discord.Member = None):
-    member = member or ctx.author
-    await ctx.send(member.display_avatar.url)
-
-
-@bot.command(name="banner")
-async def banner(ctx: commands.Context, member: discord.Member = None):
-    member = member or ctx.author
-    user = await bot.fetch_user(member.id)
-    if not user.banner:
-        return await ctx.send("> [!] That user has no banner.")
-    await ctx.send(user.banner.url)
-
-
-@bot.command(name="roleinfo")
-async def roleinfo(ctx: commands.Context, *, role: discord.Role):
-    embed = discord.Embed(title=role.name, color=role.color)
-    embed.add_field(name="ID", value=str(role.id))
-    embed.add_field(name="Color", value=str(role.color))
-    embed.add_field(name="Members", value=str(len(role.members)))
-    embed.add_field(name="Mentionable", value=str(role.mentionable))
-    embed.add_field(name="Hoisted", value=str(role.hoist))
-    embed.add_field(name="Position", value=str(role.position))
-    await ctx.send(embed=embed)
+# The member-facing utility commands (ping, serverinfo, userinfo, avatar,
+# banner, roleinfo, channelinfo, uptime, roll, coinflip, 8ball) now live in the
+# member bot's `members.py`. This bot is staff-only, so members never see them
+# advertised as moderation-adjacent commands here.
 
 
 @bot.command(name="purge")
@@ -1769,21 +1711,6 @@ async def rename(ctx: commands.Context, name: str, channel: discord.TextChannel 
     await ctx.send(f"> Renamed to `{name}`.")
 
 
-@bot.command(name="channelinfo")
-async def channelinfo(ctx: commands.Context, channel: discord.TextChannel = None):
-    channel = channel or ctx.channel
-    embed = discord.Embed(title=channel.name, color=discord.Color.blurple())
-    embed.add_field(name="ID", value=str(channel.id))
-    embed.add_field(name="Type", value=str(channel.type))
-    embed.add_field(name="Slowmode", value=f"{channel.slowmode_delay}s")
-    embed.add_field(name="NSFW", value=str(channel.nsfw))
-    embed.add_field(name="Category", value=channel.category.name if channel.category else "None")
-    embed.add_field(name="Created", value=discord.utils.format_dt(channel.created_at, "R"))
-    if channel.topic:
-        embed.add_field(name="Topic", value=channel.topic[:1000], inline=False)
-    await ctx.send(embed=embed)
-
-
 @bot.command(name="dm")
 @commands.has_permissions(moderate_members=True)
 async def dm(ctx: commands.Context, member: discord.Member, *, message: str):
@@ -1853,44 +1780,6 @@ async def raidmode(ctx: commands.Context):
     else:
         RAID_MODE.add(ctx.guild.id)
         await ctx.send("> Raid mode ENABLED. New accounts (<1 day) will be kicked on join.")
-
-
-@bot.command(name="roll")
-async def roll(ctx: commands.Context, dice: str = "1d6"):
-    m = re.fullmatch(r"(\d+)d(\d+)", dice.lower())
-    if not m:
-        return await ctx.send("[X] Format: NdN, e.g. `2d20`")
-    n, sides = int(m.group(1)), int(m.group(2))
-    if n < 1 or n > 20 or sides < 2 or sides > 1000:
-        return await ctx.send("[X] Out of range.")
-    rolls = [random.randint(1, sides) for _ in range(n)]
-    await ctx.send(f"> Rolled {dice}: `{rolls}` (total {sum(rolls)})")
-
-
-@bot.command(name="coinflip")
-async def coinflip(ctx: commands.Context):
-    await ctx.send(f"> {random.choice(['Heads', 'Tails'])}")
-
-
-@bot.command(name="8ball")
-async def eightball(ctx: commands.Context, *, question: str):
-    responses = [
-        "It is certain.", "It is decidedly so.", "Without a doubt.", "Yes definitely.",
-        "You may rely on it.", "As I see it, yes.", "Most likely.", "Outlook good.",
-        "Yes.", "Signs point to yes.", "Reply hazy, try again.", "Ask again later.",
-        "Better not tell you now.", "Cannot predict now.", "Concentrate and ask again.",
-        "Don't count on it.", "My reply is no.", "My sources say no.",
-        "Outlook not so good.", "Very doubtful.",
-    ]
-    await ctx.send(f"> Q: {question}\n> A: {random.choice(responses)}")
-
-
-@bot.command(name="uptime")
-async def uptime(ctx: commands.Context):
-    if not hasattr(bot, "_start_time"):
-        return await ctx.send("[!] Uptime not tracked yet.")
-    delta = datetime.datetime.utcnow() - bot._start_time
-    await ctx.send(f"> Uptime: {human_delta(int(delta.total_seconds()))}")
 
 
 async def _resolve_target(ctx: commands.Context, query: str):

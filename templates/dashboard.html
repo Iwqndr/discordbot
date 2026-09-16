@@ -1287,8 +1287,10 @@
   .modal-card.wide { max-width: 920px; }
   .modal-card.sm { max-width: 420px; }
 
-  /* Verification Modal Sizing & Popout Drawer */
-  #verification-modal .modal-card {
+  /* Verification Modal Sizing & Popout Drawer. The Ticket Panel is the same
+     editor pointed at a different config, so it shares every one of these. */
+  #verification-modal .modal-card,
+  #ticket-panel-modal .modal-card {
     width: min(1340px, 95vw); max-width: 1340px;
     height: auto; max-height: 88vh;
   }
@@ -1296,12 +1298,16 @@
      empty box; long ones still scroll inside the 88vh ceiling. The preview
      column stops stretching to the height of the form and follows the scroll
      instead. */
-  #verification-modal .verif-modal-wrap { min-height: 0; }
-  #verification-modal .verif-modal-wrap > .grid { align-items: start; }
-  #verification-modal .verif-modal-wrap > .grid > :last-child {
+  #verification-modal .verif-modal-wrap,
+  #ticket-panel-modal .verif-modal-wrap { min-height: 0; }
+  #verification-modal .verif-modal-wrap > .grid,
+  #ticket-panel-modal .verif-modal-wrap > .grid { align-items: start; }
+  #verification-modal .verif-modal-wrap > .grid > :last-child,
+  #ticket-panel-modal .verif-modal-wrap > .grid > :last-child {
     position: sticky; top: 0; align-self: start;
   }
-  #verification-modal .modal-body {
+  #verification-modal .modal-body,
+  #ticket-panel-modal .modal-body {
     position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
   }
   .verif-modal-wrap {
@@ -3554,6 +3560,18 @@
             </div>
           </div>
 
+          <!-- Ticket Panel Customizer: the same editor as the verification
+               panel, pointed at its own config and its own deploy endpoint. -->
+          <div class="card">
+            <div class="card-title"><i data-lucide="ticket" style="color:var(--warn)"></i> Ticket Panel</div>
+            <div class="card-sub">Customize the <b>Create Ticket</b> panel. The button sends members to the support form on your member page instead of opening a ticket in Discord.</div>
+            <div class="sep"></div>
+            <div class="card-sub" id="tkp-summary" style="font-size:11.5px">Loading current settings…</div>
+            <div style="margin-top:14px">
+              <button class="btn btn-accent" id="open-ticket-panel"><i data-lucide="settings-2"></i> Ticket Panel</button>
+            </div>
+          </div>
+
           <!-- Member Management: the channel flags and the mass-action brake -->
           <div class="card">
             <div class="card-title"><i data-lucide="users-round" style="color:var(--warn)"></i> Member Management</div>
@@ -4335,6 +4353,142 @@
   </div>
 </div>
 
+<!-- TICKET PANEL EDITOR (Owner Panel)
+     Deliberately the same shape as the verification editor: same cards, same
+     field order, same live preview. The only difference is the top card, which
+     explains where the button sends members instead of picking roles. -->
+<div class="modal" id="ticket-panel-modal">
+  <div class="modal-bg" data-close="ticket-panel-modal"></div>
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <i data-lucide="ticket" style="color:var(--warn)"></i>
+      <div style="flex:1">
+        <div class="h2">Ticket Panel</div>
+        <div class="card-sub">Edit the live Create Ticket button panel. Saved changes apply to the posted panel instantly and survive restarts.</div>
+      </div>
+      <button class="icon-btn" data-close="ticket-panel-modal"><i data-lucide="x"></i></button>
+    </div>
+
+    <div class="modal-body">
+      <div class="verif-modal-wrap">
+        <div class="grid" style="grid-template-columns:1fr minmax(320px, 420px);flex:1;min-width:0;overflow-y:auto">
+          <!-- Controls -->
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="card" style="padding:12px">
+              <div class="card-title" style="font-size:13px"><i data-lucide="external-link"></i> Where The Button Sends People</div>
+              <div class="card-sub" style="font-size:11.5px;margin-top:6px" id="tkp-support-location">Checking the configured member site…</div>
+              <div class="card-sub" style="font-size:11px;margin-top:6px">The button replies privately with a link to your support page, and the page opens its support form by itself. Tickets still arrive through the normal web flow — this panel never creates one.</div>
+            </div>
+
+            <div class="card" style="padding:12px">
+              <div class="card-title" style="font-size:13px"><i data-lucide="type"></i> Panel Content</div>
+              <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+                <div class="field"><label>Title</label><input class="input" id="tkp-title"></div>
+                <div class="field"><label>Accent Color</label>
+                  <div style="display:flex;gap:6px">
+                    <input class="input" type="color" id="tkp-color" style="width:40px;height:36px;padding:2px">
+                    <input class="input mono" id="tkp-color-hex" placeholder="#5865F2">
+                  </div>
+                </div>
+              </div>
+
+              <div class="field" style="margin-top:10px">
+                <label>Description</label>
+                <button type="button" class="verif-desc-btn" id="tkp-desc-open">
+                  <i data-lucide="align-left" style="width:15px;height:15px;color:var(--accent-dark);flex-shrink:0"></i>
+                  <span class="vd-snippet" id="tkp-desc-snippet">Click to write the panel description…</span>
+                  <span class="vd-edit"><i data-lucide="pencil-line"></i> Open Editor</span>
+                </button>
+                <textarea class="hidden" id="tkp-desc"></textarea>
+                <div class="card-sub" style="font-size:11px">Full markdown editor with live Discord rendering — <b>**bold**</b>, <i>*italic*</i>, __underline__, ||spoiler||, `code`, &gt; quotes, headings and lists.</div>
+              </div>
+
+              <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+                <div class="field"><label>Button Label</label><input class="input" id="tkp-button-label" placeholder="Create Ticket"></div>
+                <div class="field"><label>Button Emoji (optional)</label><input class="input" id="tkp-button-emoji" placeholder="🎫 or <:name:id>"></div>
+                <div class="field"><label>Button Style</label>
+                  <select class="select" id="tkp-button-style">
+                    <option value="success">Green (Success)</option>
+                    <option value="primary">Blurple (Primary)</option>
+                    <option value="danger">Red (Danger)</option>
+                    <option value="secondary">Grey (Secondary)</option>
+                  </select>
+                </div>
+                <div class="field" style="justify-content:flex-end">
+                  <label class="chip" style="gap:8px"><input type="checkbox" id="tkp-timestamp"> Show Timestamp</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" style="padding:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <div class="card-title" style="font-size:13px"><i data-lucide="list"></i> Embed Fields</div>
+                <button class="btn btn-sm" id="tkp-add-field"><i data-lucide="plus"></i> Add Field</button>
+              </div>
+              <div class="card-sub" style="font-size:11px;margin-top:4px">Up to 25 fields. Inline fields sit side by side, like Discord.</div>
+              <div id="tkp-fields-list" style="display:flex;flex-direction:column;gap:8px;margin-top:10px"></div>
+            </div>
+
+            <div class="card" style="padding:12px">
+              <div class="card-title" style="font-size:13px"><i data-lucide="image"></i> Author, Images &amp; Footer</div>
+              <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+                <div class="field"><label>Author Name (blank = server name)</label><input class="input" id="tkp-author"></div>
+                <div class="field"><label>Author Icon URL</label><input class="input" id="tkp-author-icon" placeholder="https://…"></div>
+                <div class="field"><label>Thumbnail URL (blank = server icon)</label><input class="input" id="tkp-thumb" placeholder="https://…"></div>
+                <div class="field"><label>Banner Image URL</label><input class="input" id="tkp-image" placeholder="https://…"></div>
+                <div class="field"><label>Footer Text</label><input class="input" id="tkp-footer"></div>
+                <div class="field"><label>Footer Icon URL</label><input class="input" id="tkp-footer-icon" placeholder="https://…"></div>
+              </div>
+            </div>
+
+            <div class="card" style="padding:12px">
+              <div class="card-title" style="font-size:13px"><i data-lucide="send"></i> Deploy / Update The Panel</div>
+              <div class="card-sub" style="font-size:11.5px;margin-top:4px" id="tkp-panel-location">No panel deployed yet.</div>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+                <select class="select" id="tkp-channel-select" style="flex:1;min-width:180px"><option value="">Select channel…</option></select>
+                <button class="btn btn-accent" id="tkp-deploy-btn"><i data-lucide="send"></i> Deploy Panel</button>
+              </div>
+              <div class="card-sub" style="font-size:11px;margin-top:6px">Deploying posts a fresh panel in this channel and remembers it for restarts.</div>
+            </div>
+          </div>
+
+          <!-- Live preview -->
+          <div id="tkp-preview-home">
+            <div class="card-title" style="font-size:14px"><i data-lucide="layout"></i> Live Discord Preview</div>
+            <div class="embed-preview" id="tkp-preview" style="margin-top:10px">
+              <div id="tkp-pv-author-wrap" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                <img id="tkp-pv-author-icon" class="avatar sm hidden" src="" alt="">
+                <span id="tkp-pv-author" style="font-size:12px;font-weight:700;color:var(--muted)">Server Name</span>
+              </div>
+              <img id="tkp-pv-thumb" class="hidden" style="float:right;width:64px;height:64px;object-fit:cover;border-radius:8px;margin:0 0 6px 10px" src="" alt="">
+              <div id="tkp-pv-title" style="font-family:'Fredoka',sans-serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px">Need help?</div>
+              <div id="tkp-pv-desc" style="font-size:13px;color:var(--text);line-height:1.5"></div>
+              <div id="tkp-pv-fields" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:10px"></div>
+              <img id="tkp-pv-image" class="hidden" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin-top:10px" src="" alt="">
+              <div id="tkp-pv-footer-wrap" style="display:flex;align-items:center;gap:6px;margin-top:10px;border-top:1px solid var(--border-soft);padding-top:6px">
+                <img id="tkp-pv-footer-icon" class="avatar sm hidden" src="" alt="">
+                <span id="tkp-pv-footer" style="font-size:11px;color:var(--muted)">Support</span>
+                <span id="tkp-pv-timestamp" class="hidden" style="font-size:10.5px;color:var(--muted);margin-left:auto"></span>
+              </div>
+              <div style="margin-top:12px;display:flex;justify-content:center">
+                <span class="btn btn-accent" id="tkp-pv-button" style="pointer-events:none">
+                  <span id="tkp-pv-button-emoji"></span><span id="tkp-pv-button-label">Create Ticket</span>
+                </span>
+              </div>
+            </div>
+            <div class="card-sub" style="font-size:11px;margin-top:8px">Discord renders the embed; the button sits under it. Clicking it replies privately with a support-page link.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn" data-close="ticket-panel-modal">Close</button>
+      <button class="btn btn-accent" id="tkp-save-btn"><i data-lucide="check"></i> Save Ticket Panel Settings</button>
+    </div>
+  </div>
+</div>
+
 <!-- DESCRIPTION MARKDOWN EDITOR (opens from the Verification Panel) -->
 <div class="modal" id="verif-desc-modal">
   <div class="modal-bg" data-close="verif-desc-modal"></div>
@@ -4796,6 +4950,8 @@ const state = {
   adminAuth: null,
   verificationConfig: null,
   verifFields: [],
+  ticketPanelConfig: null,
+  tkpFields: [],
   embedFields: [],
   embedEnabled: false,
   embedConfig: null,
@@ -11316,6 +11472,7 @@ document.addEventListener('keydown', (e) => {
 function loadOwnerPanelData() {
   loadRoleAccess();
   loadVerificationConfig();
+  loadTicketPanelConfig();
   mmRefreshCardSummary();
 }
 
@@ -13644,22 +13801,25 @@ function fillVerifChannelSelect() {
 /* Which preview button class each Discord button style maps to. */
 const VED_BUTTON_CLASS = { success: 'btn-accent', primary: 'btn-accent', danger: 'btn-danger', secondary: 'btn' };
 
-function renderEmbedPreviewOne(prefix, cardId) {
+/* Renders one Discord-style embed preview from a set of panel inputs.
+   `src` is the input prefix to read from and defaults to the verification panel,
+   so the ticket panel passes 'tkp-' and gets the exact same rendering. */
+function renderEmbedPreviewOne(prefix, cardId, src = 'verif-', fields = null, fallbackFooter = 'Anti-Raid Security System') {
   const card = $(cardId);
   if (!card) return;
-  const color = ($('verif-color-hex')?.value || '').trim();
-  const title = ($('verif-title')?.value || '').trim() || 'Server Verification';
-  const desc = $('verif-desc')?.value || '';
-  const author = ($('verif-author')?.value || '').trim();
-  const authorIcon = ($('verif-author-icon')?.value || '').trim();
-  const thumb = ($('verif-thumb')?.value || '').trim();
-  const image = ($('verif-image')?.value || '').trim();
-  const footer = ($('verif-footer')?.value || '').trim();
-  const footerIcon = ($('verif-footer-icon')?.value || '').trim();
-  const buttonLabel = ($('verif-button-label')?.value || '').trim() || 'Verify';
-  const buttonEmoji = ($('verif-button-emoji') && $('verif-button-emoji').value || '').trim();
-  const buttonStyle = (($('verif-button-style') && $('verif-button-style').value) || 'success').toLowerCase();
-  const showTimestamp = !!($('verif-timestamp') && $('verif-timestamp').checked);
+  const color = ($(src + 'color-hex')?.value || '').trim();
+  const title = ($(src + 'title')?.value || '').trim() || 'Server Verification';
+  const desc = $(src + 'desc')?.value || '';
+  const author = ($(src + 'author')?.value || '').trim();
+  const authorIcon = ($(src + 'author-icon')?.value || '').trim();
+  const thumb = ($(src + 'thumb')?.value || '').trim();
+  const image = ($(src + 'image')?.value || '').trim();
+  const footer = ($(src + 'footer')?.value || '').trim();
+  const footerIcon = ($(src + 'footer-icon')?.value || '').trim();
+  const buttonLabel = ($(src + 'button-label')?.value || '').trim() || 'Verify';
+  const buttonEmoji = ($(src + 'button-emoji') && $(src + 'button-emoji').value || '').trim();
+  const buttonStyle = (($(src + 'button-style') && $(src + 'button-style').value) || 'success').toLowerCase();
+  const showTimestamp = !!($(src + 'timestamp') && $(src + 'timestamp').checked);
 
   const tEl = $(prefix + 'title'); if (tEl) tEl.textContent = title;
   const dEl = $(prefix + 'desc'); if (dEl) dEl.innerHTML = renderDiscordMarkdown(desc);
@@ -13671,8 +13831,8 @@ function renderEmbedPreviewOne(prefix, cardId) {
 
   const fieldsWrap = $(prefix + 'fields');
   if (fieldsWrap) {
-    const fields = (state.verifFields || []).filter(f => (f.name || '').trim() && (f.value || '').trim());
-    fieldsWrap.innerHTML = fields.map(f => `
+    const list = (fields || state.verifFields || []).filter(f => (f.name || '').trim() && (f.value || '').trim());
+    fieldsWrap.innerHTML = list.map(f => `
       <div style="min-width:0;${f.inline ? '' : 'grid-column:1/-1;'}">
         <div style="font-weight:800;font-size:12px">${renderDiscordMarkdown(f.name)}</div>
         <div style="font-size:12px;color:var(--muted);line-height:1.5">${renderDiscordMarkdown(f.value)}</div>
@@ -13713,7 +13873,7 @@ function renderEmbedPreviewOne(prefix, cardId) {
     else { img.removeAttribute('src'); img.classList.add('hidden'); }
   }
 
-  const fEl = $(prefix + 'footer'); if (fEl) fEl.textContent = footer || 'Anti-Raid Security System';
+  const fEl = $(prefix + 'footer'); if (fEl) fEl.textContent = footer || fallbackFooter;
   const fImg = $(prefix + 'footer-icon');
   if (fImg) {
     if (footerIcon) { fImg.src = footerIcon; fImg.classList.remove('hidden'); }
@@ -13900,6 +14060,210 @@ if ($('verif-deploy-btn')) $('verif-deploy-btn').onclick = async () => {
 };
 
 /* ============================================================
+   TICKET PANEL CUSTOMIZER (Owner Panel)
+   The same editor as the verification panel, pointed at
+   /api/ticket-panel/* and at its own set of tkp-* inputs.
+   ============================================================ */
+function renderTicketPanelPreview() {
+  renderEmbedPreviewOne('tkp-pv-', 'tkp-preview', 'tkp-', state.tkpFields, 'Support');
+  // The description editor's own preview is shared, so it has to follow the
+  // panel that is currently being edited.
+  if (vedTarget === 'tkp') renderEmbedPreviewOne('ved-pv-', 'ved-preview', 'tkp-', state.tkpFields, 'Support');
+}
+
+function updateTkpDescSnippet() {
+  const el = $('tkp-desc-snippet');
+  if (!el) return;
+  const raw = ($('tkp-desc').value || '').trim();
+  if (!raw) {
+    el.textContent = 'Click to write the panel description…';
+    el.classList.remove('has-text');
+    return;
+  }
+  const flat = raw.replace(/\s+/g, ' ');
+  el.textContent = flat.length > 120 ? flat.slice(0, 120) + '…' : flat;
+  el.classList.add('has-text');
+}
+
+function fillTkpChannelSelect() {
+  const select = $('tkp-channel-select');
+  if (!select) return;
+  const channels = whChannelList().filter(c => c.type === 'text' || c.type === 'announcement');
+  select.innerHTML = '<option value="">Select channel…</option>' +
+    channels.map(c => `<option value="${c.id}">#${esc(c.name)}</option>`).join('');
+}
+
+async function loadTicketPanelConfig() {
+  let cfg = null;
+  try { cfg = await api('/api/ticket-panel/config'); } catch (e) { cfg = null; }
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) cfg = {};
+  state.ticketPanelConfig = cfg;
+
+  const color = cfg.color || '#5865F2';
+  state.tkpFields = Array.isArray(cfg.fields)
+    ? cfg.fields.map(f => ({ name: (f && f.name) || '', value: (f && f.value) || '', inline: !!(f && f.inline) }))
+    : [];
+
+  verifSetValue('tkp-title', cfg.title || 'Need help?');
+  verifSetValue('tkp-desc', cfg.description || '');
+  verifSetValue('tkp-button-label', cfg.button_label || 'Create Ticket');
+  verifSetValue('tkp-button-emoji', cfg.button_emoji || '');
+  verifSetValue('tkp-button-style', cfg.button_style || 'success');
+  const tsBox = $('tkp-timestamp');
+  if (tsBox) tsBox.checked = !!cfg.timestamp;
+  verifSetValue('tkp-color-hex', color);
+  verifSetValue('tkp-color', /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#5865F2');
+  verifSetValue('tkp-author', cfg.author_name || '');
+  verifSetValue('tkp-author-icon', cfg.author_icon_url || '');
+  verifSetValue('tkp-thumb', cfg.thumbnail_url || '');
+  verifSetValue('tkp-image', cfg.image_url || '');
+  verifSetValue('tkp-footer', cfg.footer_text || '');
+  verifSetValue('tkp-footer-icon', cfg.footer_icon_url || '');
+
+  renderTkpFields();
+  updateTkpDescSnippet();
+  updateTkpSummary();
+
+  const loc = $('tkp-panel-location');
+  if (loc) {
+    loc.innerHTML = cfg.panel_channel_id
+      ? `Current panel: ${esc(channelLabelById(cfg.panel_channel_id))} · message <span class="mono">${esc(cfg.panel_message_id || '?')}</span>`
+      : 'No panel deployed yet. Pick a channel below and deploy.';
+  }
+  const support = $('tkp-support-location');
+  if (support) {
+    support.innerHTML = cfg.support_url
+      ? `Members are sent to <span class="mono">${esc(cfg.support_url)}</span>`
+      : '<b>MEMBER_SITE_URL is not set</b> on the bot, so the button will send plain text instead of a link. Add it to your .env and restart.';
+  }
+
+  renderTicketPanelPreview();
+}
+
+/* The owner-panel card's one-line summary, refreshed after every load. */
+function updateTkpSummary() {
+  const el = $('tkp-summary');
+  if (!el) return;
+  const cfg = state.ticketPanelConfig || {};
+  const label = cfg.button_label || 'Create Ticket';
+  const where = cfg.panel_channel_id ? `posted in ${esc(channelLabelById(cfg.panel_channel_id))}` : 'not deployed yet';
+  const link = cfg.support_url ? 'support link set' : 'no member site URL';
+  el.innerHTML = `Button: <b>${esc(label)}</b> · ${where} · ${link}`;
+}
+
+async function openTicketPanel() {
+  if (!state.ownerAuthenticated) return toast('Owner authentication required.', 'error');
+  fillTkpChannelSelect();
+  await loadTicketPanelConfig();
+  openModal('ticket-panel-modal');
+}
+
+if ($('open-ticket-panel')) $('open-ticket-panel').onclick = openTicketPanel;
+
+/* --- Embed field editor for the ticket panel ---------------------------- */
+function renderTkpFields() {
+  const wrap = $('tkp-fields-list');
+  if (!wrap) return;
+  if (!(state.tkpFields || []).length) {
+    wrap.innerHTML = '<div class="card-sub" style="font-size:11px">No fields yet — good for \'Response time\' or \'What we can help with\'.</div>';
+    renderTicketPanelPreview();
+    return;
+  }
+
+  wrap.innerHTML = state.tkpFields.map((f, i) => `
+    <div class="card" style="padding:10px">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input class="input" style="flex:1;min-width:120px" placeholder="Field name" value="${esc(f.name || '')}" data-tf-name="${i}">
+        <input class="input" style="flex:2;min-width:160px" placeholder="Field value (markdown ok)" value="${esc(f.value || '')}" data-tf-val="${i}">
+        <label class="chip" style="padding:4px 8px;font-size:11px"><input type="checkbox" ${f.inline ? 'checked' : ''} data-tf-inline="${i}"> Inline</label>
+        <button class="btn btn-sm btn-icon btn-danger" data-tf-del="${i}" title="Remove field"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>
+      </div>
+    </div>`).join('');
+
+  // Only state changes while typing — re-rendering would steal focus.
+  wrap.querySelectorAll('[data-tf-name]').forEach(el => el.oninput = (e) => { state.tkpFields[+el.dataset.tfName].name = e.target.value; renderTicketPanelPreview(); });
+  wrap.querySelectorAll('[data-tf-val]').forEach(el => el.oninput = (e) => { state.tkpFields[+el.dataset.tfVal].value = e.target.value; renderTicketPanelPreview(); });
+  wrap.querySelectorAll('[data-tf-inline]').forEach(el => el.onchange = (e) => { state.tkpFields[+el.dataset.tfInline].inline = e.target.checked; renderTicketPanelPreview(); });
+  wrap.querySelectorAll('[data-tf-del]').forEach(btn => btn.onclick = () => {
+    state.tkpFields.splice(+btn.dataset.tfDel, 1);
+    renderTkpFields();
+  });
+
+  icons();
+  renderTicketPanelPreview();
+}
+
+if ($('tkp-add-field')) $('tkp-add-field').onclick = () => {
+  if ((state.tkpFields || []).length >= 25) return toast('Discord allows at most 25 fields.', 'error');
+  state.tkpFields = state.tkpFields || [];
+  state.tkpFields.push({ name: '', value: '', inline: false });
+  renderTkpFields();
+};
+
+/* --- Live-update wiring ------------------------------------------------ */
+['tkp-title', 'tkp-button-label', 'tkp-button-emoji', 'tkp-author', 'tkp-author-icon',
+ 'tkp-thumb', 'tkp-image', 'tkp-footer', 'tkp-footer-icon', 'tkp-color-hex'
+].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener('input', renderTicketPanelPreview);
+});
+if ($('tkp-button-style')) $('tkp-button-style').onchange = renderTicketPanelPreview;
+if ($('tkp-timestamp')) $('tkp-timestamp').onchange = renderTicketPanelPreview;
+
+if ($('tkp-color')) {
+  $('tkp-color').addEventListener('input', (e) => {
+    $('tkp-color-hex').value = e.target.value;
+    renderTicketPanelPreview();
+  });
+}
+if ($('tkp-color-hex')) {
+  $('tkp-color-hex').addEventListener('input', (e) => {
+    const v = (e.target.value || '').trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) $('tkp-color').value = v;
+  });
+}
+
+if ($('tkp-save-btn')) $('tkp-save-btn').onclick = async () => {
+  if (!state.ownerAuthenticated) return toast('Owner authentication required.', 'error');
+
+  const payload = {
+    title: $('tkp-title').value,
+    description: $('tkp-desc').value,
+    color: ($('tkp-color-hex').value || '').trim(),
+    button_label: $('tkp-button-label').value,
+    button_emoji: ($('tkp-button-emoji') && $('tkp-button-emoji').value) || '',
+    button_style: ($('tkp-button-style') && $('tkp-button-style').value) || 'success',
+    timestamp: !!($('tkp-timestamp') && $('tkp-timestamp').checked),
+    fields: (state.tkpFields || []).filter(f => (f.name || '').trim() && (f.value || '').trim()),
+    author_name: $('tkp-author').value,
+    author_icon_url: $('tkp-author-icon').value,
+    thumbnail_url: $('tkp-thumb').value,
+    image_url: $('tkp-image').value,
+    footer_text: $('tkp-footer').value,
+    footer_icon_url: $('tkp-footer-icon').value,
+  };
+
+  const res = await api('/api/ticket-panel/config', payload);
+  if (!res || res.status === 'error') {
+    return toast((res && res.message) || 'Could not save ticket panel settings.', 'error');
+  }
+  toast(res.message || 'Ticket panel settings saved.', 'success');
+  loadTicketPanelConfig();
+};
+
+if ($('tkp-deploy-btn')) $('tkp-deploy-btn').onclick = async () => {
+  if (!state.ownerAuthenticated) return toast('Owner authentication required.', 'error');
+  const channelId = $('tkp-channel-select').value;
+  if (!channelId) return toast('Pick a channel to post the panel in.', 'error');
+  const res = await api('/api/ticket-panel/deploy', { channel_id: channelId, guild_id: state.guild && state.guild.guild_id });
+  if (!res || res.status === 'error') {
+    return toast((res && res.message) || 'Could not deploy the panel.', 'error');
+  }
+  toast(res.message || 'Ticket panel deployed.', 'success');
+  loadTicketPanelConfig();
+};
+
+/* ============================================================
    DISCORD MARKDOWN RENDERER
    Renders the subset of markdown Discord shows inside an embed, applied on top
    of already-escaped text, so the panel preview matches the real message.
@@ -14001,10 +14365,20 @@ let vedFindMatches = [];
 let vedFindIndex = -1;
 let vedLastMouse = null;
 
-function openVerifDescEditor() {
+/* Which panel's description the shared editor is editing right now: 'verif' or
+   'tkp'. The ticket panel reuses this whole editor rather than shipping a
+   second copy of the markdown tooling. */
+let vedTarget = 'verif';
+
+function openVerifDescEditor() { openPanelDescEditor('verif'); }
+function openTkpDescEditor() { openPanelDescEditor('tkp'); }
+
+function openPanelDescEditor(target) {
   const ta = $('ved-text');
   if (!ta) return;
-  ta.value = $('verif-desc').value || '';
+  vedTarget = target;
+  const field = $(target + '-desc');
+  ta.value = (field && field.value) || '';
 
   openModal('verif-desc-modal');
   updateVedCount();
@@ -14027,9 +14401,15 @@ function syncVedPreview(instant) {
   const run = () => {
     const ta = $('ved-text');
     if (!ta) return;
-    $('verif-desc').value = ta.value;
-    updateVerifDescSnippet();
-    renderVerificationPreview();
+    const field = $(vedTarget + '-desc');
+    if (field) field.value = ta.value;
+    if (vedTarget === 'tkp') {
+      updateTkpDescSnippet();
+      renderTicketPanelPreview();
+    } else {
+      updateVerifDescSnippet();
+      renderVerificationPreview();
+    }
   };
   if (instant) { run(); return; }
   clearTimeout(vedSyncTimer);
@@ -14512,13 +14892,16 @@ function updateVedFindCount() {
 
 /* --- Wiring -------------------------------------------------------------- */
 if ($('verif-desc-open')) $('verif-desc-open').onclick = openVerifDescEditor;
+if ($('tkp-desc-open')) $('tkp-desc-open').onclick = openTkpDescEditor;
 if ($('ved-apply')) $('ved-apply').onclick = () => {
   syncVedPreview(true);
   closeModal('verif-desc-modal');
-  toast('Description applied. Click Save Verification Settings to publish.', 'success');
+  const panel = vedTarget === 'tkp' ? 'Ticket Panel Settings' : 'Verification Settings';
+  toast('Description applied. Click Save ' + panel + ' to publish.', 'success');
 };
 if ($('ved-reset')) $('ved-reset').onclick = () => {
-  const saved = (state.verificationConfig && state.verificationConfig.description) || '';
+  const cfg = vedTarget === 'tkp' ? state.ticketPanelConfig : state.verificationConfig;
+  const saved = (cfg && cfg.description) || '';
   $('ved-text').value = saved;
   syncVedPreview(true);
   updateVedCount();

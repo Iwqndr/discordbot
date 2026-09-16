@@ -1,4 +1,5 @@
 discord.py
 flask
 psutil
+Pillow>=10.0.0
 python-dotenv

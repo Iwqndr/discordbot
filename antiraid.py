@@ -15,6 +15,7 @@ from config import (
     SYSTEM_LOG_PARENT_NAME,
     VERIFIED_ROLE_ID,
     SUPPORT_LINK,
+    MEMBER_SITE_URL,
 )
 
 
@@ -25,6 +26,7 @@ WATCHLIST_FILE = "watchlist.json"
 LOG_CONFIG_FILE = "log_config.json"
 THREAD_INDEX_FILE = "thread_index.json"
 VERIFICATION_CONFIG_FILE = "verification_config.json"
+TICKET_PANEL_CONFIG_FILE = "ticket_panel_config.json"
 AUTOMOD_CONFIG_FILE = "automod_config.json"
 MEDIA_ONLY_FILE = "media_only_channels.json"
 SELFPROMO_FILE = "selfpromo_channels.json"
@@ -694,6 +696,7 @@ class AutoModConfig(JsonStore):
 
 automod_config = AutoModConfig()
 verification_config = JsonStore(VERIFICATION_CONFIG_FILE)
+ticket_panel_config = JsonStore(TICKET_PANEL_CONFIG_FILE)
 case_store = CaseStore()
 
 
@@ -1976,6 +1979,257 @@ async def refresh_verification_panel(bot) -> bool:
         return True
     except Exception as e:
         warn(f"[VERIFY] Could not refresh panel: {type(e).__name__}: {e}")
+        return False
+
+
+# ----------------------------------------------------------
+# TICKET PANEL — the "Create Ticket" button
+#
+# A second editable panel that mirrors the verification panel in every respect:
+# its own config file, its own persistent view, its own deploy and refresh
+# functions, and its own editor in the dashboard's owner panel. The existing
+# verification code above is untouched.
+#
+# The one behavioural difference: this button does not create anything. It
+# replies ephemerally and sends the member to the support form on the member
+# site, so tickets keep landing in Supabase through the web flow that already
+# works.
+# ----------------------------------------------------------
+
+# The custom_id the member bot's persistent view listens for. It must not
+# collide with the verification button's id, or Discord would route a click to
+# whichever view registered first.
+TICKET_BUTTON_CUSTOM_ID = "ticket_creation_button"
+
+# Same keys as DEFAULT_VERIFICATION_CONFIG so the dashboard editor can reuse the
+# same controls. `role_ids` is carried for shape compatibility only — a ticket
+# panel grants nothing, so it stays empty and is never required.
+DEFAULT_TICKET_PANEL_CONFIG = {
+    "role_ids": [],
+    "title": "Need help?",
+    "description": (
+        "**Support tickets**\n\n"
+        "Open a ticket and a member of staff will pick it up. You can attach "
+        "screenshots and check back on the reply at any time.\n\n"
+        "**How to open one**\n"
+        "> Click the **Create Ticket** button below.\n"
+        "> You will be sent to our support page with the form already open.\n\n"
+        "**Before you ask**\n"
+        "> Read the FAQ first — most questions are answered there.\n"
+        "> Appeals need your case ID, which is in the DM we sent you.\n\n"
+        "*If the button does not work, ask a staff member for a link.*"
+    ),
+    "color": "#5865F2",
+    "button_label": "Create Ticket",
+    "button_emoji": "",
+    "button_style": "success",
+    "author_name": "",
+    "author_icon_url": "",
+    "thumbnail_url": "",
+    "image_url": "",
+    "footer_text": "Support",
+    "footer_icon_url": "",
+    "timestamp": False,
+    "fields": [],
+    "panel_channel_id": None,
+    "panel_message_id": None,
+}
+
+
+def load_ticket_panel_config() -> dict:
+    """Read the ticket panel config, layered over its defaults."""
+    cfg = dict(DEFAULT_TICKET_PANEL_CONFIG)
+    cfg["role_ids"] = list(DEFAULT_TICKET_PANEL_CONFIG["role_ids"])
+    cfg["fields"] = list(DEFAULT_TICKET_PANEL_CONFIG["fields"])
+    stored = ticket_panel_config.data if isinstance(ticket_panel_config.data, dict) else {}
+    for key, value in stored.items():
+        if key == "role_ids":
+            cfg["role_ids"] = verification_role_ids(value)
+        elif key in cfg:
+            cfg[key] = value
+    return cfg
+
+
+def save_ticket_panel_config(patch: dict) -> dict:
+    """Merge a patch into the ticket panel config and persist it."""
+    cfg = load_ticket_panel_config()
+    for key, value in (patch or {}).items():
+        if key not in cfg:
+            continue
+        if key == "role_ids":
+            cfg["role_ids"] = verification_role_ids(value)
+        else:
+            cfg[key] = value
+    ticket_panel_config.data = cfg
+    ticket_panel_config.save()
+    return cfg
+
+
+def ticket_support_url() -> str:
+    """The exact URL the panel button sends a member to.
+
+    The member page watches for `?open=support` on load and opens the support
+    modal by itself, so the bot never has to know how the site is built.
+    """
+    if not MEMBER_SITE_URL:
+        return ""
+    return f"{MEMBER_SITE_URL}?open=support"
+
+
+class TicketPanelView(discord.ui.View):
+    """The persistent Create Ticket panel.
+
+    Settings are re-read from ticket_panel_config.json at interaction time, so a
+    dashboard edit reaches the panel that is already posted, and re-registering
+    this view on startup keeps the button alive across restarts.
+    """
+
+    def __init__(self, bot_avatar: str = None):
+        super().__init__(timeout=None)
+        self.bot_avatar = bot_avatar
+        cfg = load_ticket_panel_config()
+        label = (cfg.get("button_label") or "Create Ticket")
+        for child in self.children:
+            if isinstance(child, discord.ui.Button) and child.custom_id == TICKET_BUTTON_CUSTOM_ID:
+                child.label = _clip(label, 80) or "Create Ticket"
+                child.emoji = _verification_emoji(cfg.get("button_emoji"))
+                child.style = _VERIFICATION_BUTTON_STYLES.get(
+                    str(cfg.get("button_style") or "success").lower(),
+                    discord.ButtonStyle.success,
+                )
+
+    def build_panel_embed(self, guild: discord.Guild) -> discord.Embed:
+        """The posted embed, rebuilt from config every time it is rendered."""
+        cfg = load_ticket_panel_config()
+        embed = discord.Embed(
+            title=_clip(cfg.get("title") or "Need help?", 256),
+            description=_clip(cfg.get("description") or "", 4096),
+            color=_verification_color(cfg.get("color")),
+        )
+
+        author_name = (cfg.get("author_name") or "").strip()
+        if author_name:
+            embed.set_author(
+                name=_clip(author_name, 256),
+                icon_url=(cfg.get("author_icon_url") or "").strip() or None,
+            )
+        elif guild and guild.icon:
+            embed.set_author(name=guild.name, icon_url=guild.icon.url)
+
+        thumbnail = (cfg.get("thumbnail_url") or "").strip()
+        if thumbnail:
+            embed.set_thumbnail(url=thumbnail)
+        elif guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+
+        image = (cfg.get("image_url") or "").strip()
+        if image:
+            embed.set_image(url=image)
+
+        for field in (cfg.get("fields") or []):
+            if len(embed.fields) >= 25:
+                break
+            if not isinstance(field, dict):
+                continue
+            name = _clip(field.get("name") or "", 256)
+            value = _clip(field.get("value") or "", 1024)
+            if not name or not value:
+                continue
+            embed.add_field(name=name, value=value, inline=bool(field.get("inline")))
+
+        if cfg.get("timestamp"):
+            embed.timestamp = discord.utils.utcnow()
+
+        footer_text = (cfg.get("footer_text") or "").strip()
+        footer_icon = (cfg.get("footer_icon_url") or "").strip() or self.bot_avatar
+        if footer_text:
+            embed.set_footer(text=_clip(footer_text, 2048), icon_url=footer_icon or None)
+        elif self.bot_avatar:
+            embed.set_footer(text="Support", icon_url=self.bot_avatar)
+        return embed
+
+    @discord.ui.button(
+        label="Create Ticket",
+        style=discord.ButtonStyle.success,
+        custom_id=TICKET_BUTTON_CUSTOM_ID
+    )
+    async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Send the member to the support form. Never creates a ticket itself."""
+        url = ticket_support_url()
+        if url:
+            message = f"Head to our [support page]({url}) to open a Ticket."
+        else:
+            # No MEMBER_SITE_URL configured: keep the sentence readable rather
+            # than emitting a link with nothing in it.
+            message = "Head to our support page to open a Ticket."
+        try:
+            await interaction.response.send_message(message, ephemeral=True, suppress_embeds=True)
+        except Exception as e:
+            warn(f"[TICKET] Could not reply to the panel button: {type(e).__name__}: {e}")
+
+
+async def deploy_ticket_panel(channel: discord.TextChannel, bot_user: discord.User = None, record: bool = True):
+    """Post the Create Ticket panel and remember where it went.
+
+    Mirrors deploy_verification_panel: any previously stored panel message in
+    this channel is deleted first, so redeploying never leaves two panels.
+    """
+    cfg = load_ticket_panel_config()
+    old_msg_id = cfg.get("panel_message_id")
+    old_chan_id = cfg.get("panel_channel_id")
+    if old_msg_id and (not old_chan_id or str(old_chan_id) == str(channel.id)):
+        try:
+            old_msg = await channel.fetch_message(int(old_msg_id))
+            await old_msg.delete()
+        except Exception:
+            pass
+
+    view = TicketPanelView(bot_avatar=bot_user.display_avatar.url if bot_user else None)
+    embed = view.build_panel_embed(channel.guild)
+    message = await channel.send(embed=embed, view=view)
+    if record:
+        save_ticket_panel_config({
+            "panel_channel_id": str(channel.id),
+            "panel_message_id": str(message.id),
+        })
+    return message
+
+
+def register_ticket_panel_view(bot) -> bool:
+    """Re-attach the persistent Create Ticket button after a restart."""
+    try:
+        avatar = bot.user.display_avatar.url if bot.user else None
+        bot.add_view(TicketPanelView(bot_avatar=avatar))
+        return True
+    except Exception as e:
+        warn(f"[TICKET] Could not register persistent view: {type(e).__name__}: {e}")
+        return False
+
+
+async def refresh_ticket_panel(bot) -> bool:
+    """Re-render the stored ticket panel with whatever the config now says."""
+    cfg = load_ticket_panel_config()
+    channel_id = cfg.get("panel_channel_id")
+    message_id = cfg.get("panel_message_id")
+    if not channel_id or not message_id:
+        return False
+    try:
+        channel = bot.get_channel(int(channel_id))
+    except (TypeError, ValueError):
+        return False
+    if channel is None:
+        return False
+    try:
+        message = await channel.fetch_message(int(message_id))
+    except Exception:
+        return False
+
+    view = TicketPanelView(bot_avatar=bot.user.display_avatar.url if bot.user else None)
+    try:
+        await message.edit(embed=view.build_panel_embed(channel.guild), view=view)
+        return True
+    except Exception as e:
+        warn(f"[TICKET] Could not refresh panel: {type(e).__name__}: {e}")
         return False
 
 

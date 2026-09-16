@@ -73,3 +73,17 @@ SUPPORT_LINK = (os.getenv("SUPPORT_LINK") or "").strip()
 # Names of the log channels created under those categories.
 MESSAGE_LOG_PARENT_NAME = os.getenv("MESSAGE_LOG_PARENT_NAME") or "user-message-logs"
 SYSTEM_LOG_PARENT_NAME = os.getenv("SYSTEM_LOG_PARENT_NAME") or "system-logs"
+
+# ---------------------------------------------------------------------------
+# The member bot (the sibling `wispcord/` project, deployed to Wispbyte)
+# ---------------------------------------------------------------------------
+# The member bot is a SEPARATE Discord application with its own token. It is
+# never the admin bot, so it must never be handed DISCORD_TOKEN. Keep this empty
+# here: the admin process only reads it to warn when the ticket panel's "create
+# ticket" button points at a site URL that was never configured.
+MEMBER_BOT_TOKEN = (os.getenv("MEMBER_BOT_TOKEN") or "").strip()
+
+# Public address of the member page (the Cloudflare deployment). The ticket
+# panel button builds `{MEMBER_SITE_URL}?open=support` from this, and the panel
+# preview in the dashboard shows the same link, so both halves always agree.
+MEMBER_SITE_URL = (os.getenv("MEMBER_SITE_URL") or "").strip().rstrip("/")

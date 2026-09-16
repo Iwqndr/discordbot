@@ -297,6 +297,10 @@
   .docs-content h4:first-child { margin-top: 0; }
   .docs-content h4::after { content: ""; flex: 1; height: 1.5px; background: var(--border-soft); border-radius: 1px; }
   .docs-content p { color: var(--text); font-weight: 500; line-height: 1.6; margin-bottom: 6px; }
+  .docs-content .aliases {
+    font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+  }
   .docs-content ul { list-style: none; padding: 0; margin: 0 0 6px 0; }
   .docs-content li {
     position: relative; padding-left: 18px; margin-bottom: 4px;
@@ -2274,6 +2278,7 @@
         <div class="sw-row"><span>members</span><b id="swMembers">-</b></div>
         <div class="sw-row"><span>online now</span><b id="swOnline">-</b></div>
         <div class="sw-row"><span>uptime</span><b id="swUptime">-</b></div>
+        <div class="sw-row"><span>member bot</span><b id="swMemberBot">-</b></div>
         <div class="sw-foot" id="swFoot">Checking the bot...</div>
       </div>
     </div>
@@ -2710,18 +2715,118 @@ const ROLES = [
   {
     name: "Members", color: "#96908a", soft: "#e5e1dc",
     commands: [
+      /* Fun */
+      ["roll [dice]", "Roll dice, with optional modifiers", { how: "Roll NdN dice with an optional + or - modifier.", args: [["[dice]", "Format NdN, e.g. 2d20 or 4d6+2. Default 1d6.", "optional"]], ex: [">roll", ">roll 2d20", ">roll 4d6+2"] }],
+      ["coinflip", "Flip a coin", { how: "Heads or tails, fifty-fifty.", aliases: ["cf"], ex: [">coinflip"] }],
+      ["8ball <question>", "Ask the magic 8-ball", { how: "Answers any yes/no question from a fixed set of 20 replies.", args: [["<question>", "Anything you want answered.", "required"]], ex: [">8ball Will it rain?"] }],
+      ["choose a | b | c", "Pick one of your options", { how: "Picks one option at random. Separate options with | or a comma.", args: [["a | b | c", "Two or more options.", "required"]], ex: [">choose pizza | sushi | tacos"] }],
+      ["rate <thing>", "Rate anything out of 10", { how: "Gives a stable score out of 10 for whatever you name.", args: [["<thing>", "The thing being rated.", "required"]], ex: [">rate pineapple pizza"] }],
+      ["wyr", "Would you rather", { how: "Posts a would-you-rather with A and B reactions.", ex: [">wyr"] }],
+      ["truth", "Answer a truth question", { how: "Posts a random truth question.", ex: [">truth"] }],
+      ["dare", "Take on a dare", { how: "Posts a random dare.", ex: [">dare"] }],
+      ["iq @user", "Today's IQ reading", { how: "A stable IQ for the day. Rerolls at midnight UTC.", args: [["[@user]", "Default: you.", "optional"]], ex: [">iq", ">iq @user"] }],
+      ["rizz @user", "Today's rizz reading", { how: "A stable rizz percentage for the day.", args: [["[@user]", "Default: you.", "optional"]], ex: [">rizz", ">rizz @user"] }],
+      ["hotcalc @user", "Today's hotcalc reading", { how: "A stable hot percentage for the day, with a bar.", args: [["[@user]", "Default: you.", "optional"]], ex: [">hotcalc"] }],
+      ["fortune @user", "Today's fortune", { how: "One-line fortune reading, fixed for the day.", aliases: ["fortunecookie"], args: [["[@user]", "Default: you.", "optional"]], ex: [">fortune", ">fortune @user"] }],
+      ["aura @user", "Today's aura reading", { how: "Aura points plus a verdict, fixed for the day.", args: [["[@user]", "Default: you.", "optional"]], ex: [">aura"] }],
+      ["femboy @user", "Today's femboy energy", { how: "Femboy energy percentage for the day.", args: [["[@user]", "Default: you.", "optional"]], ex: [">femboy"] }],
+      ["catboy @user", "Today's catboy energy", { how: "Catboy energy percentage for the day.", args: [["[@user]", "Default: you.", "optional"]], ex: [">catboy"] }],
+      ["crush @user1 @user2", "Today's crush chance", { how: "Chance that the first person has a crush on the second. Same for the pair all day.", aliases: ["crushrate"], args: [["<user1>", "The one with the crush.", "required"], ["<user2>", "The one being crushed on.", "required"]], ex: [">crush @a @b"] }],
+      ["match @user1 @user2", "Today's match rating", { how: "Like ship, but with its own verdict table.", aliases: ["matchrate"], args: [["<user1>", "First person.", "required"], ["<user2>", "Second person.", "required"]], ex: [">match @a @b"] }],
+
+      /* Actions */
+      ["hug @user", "Hug someone", { how: "Hugs the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">hug @user"] }],
+      ["pat @user", "Pat someone", { how: "Pats the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">pat @user"] }],
+      ["boop @user", "Boop someone", { how: "Boops the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">boop @user"] }],
+      ["kill @user", "Dramatically end someone", { how: "Dramatically ends the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">kill @user"] }],
+      ["kiss @user", "Kiss someone", { how: "Kisses the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">kiss @user"] }],
+      ["slap @user", "Slap someone", { how: "Slaps the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">slap @user"] }],
+      ["cuddle @user", "Cuddle someone", { how: "Cuddles the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">cuddle @user"] }],
+      ["bite @user", "Bite someone", { how: "Bites the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">bite @user"] }],
+      ["lick @user", "Lick someone", { how: "Licks the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">lick @user"] }],
+      ["punch @user", "Punch someone", { how: "Punches the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">punch @user"] }],
+      ["kick @user", "Kick someone", { how: "Kicks the mentioned member. The fun version, not the moderation one.", args: [["<user>", "Target.", "required"]], ex: [">kick @user"] }],
+      ["wave @user", "Wave at someone", { how: "Waves at the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">wave @user"] }],
+      ["highfive @user", "High-five someone", { how: "High-fives the mentioned member.", aliases: ["hf"], args: [["<user>", "Target.", "required"]], ex: [">highfive @user", ">hf @user"] }],
+      ["handhold @user", "Hold someone's hand", { how: "Holds hands with the mentioned member.", aliases: ["holdhands"], args: [["<user>", "Target.", "required"]], ex: [">handhold @user"] }],
+      ["feed @user", "Feed someone", { how: "Feeds the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">feed @user"] }],
+      ["baka @user", "Call someone a baka", { how: "Calls the mentioned member a baka.", args: [["<user>", "Target.", "required"]], ex: [">baka @user"] }],
+      ["pout @user", "Pout at someone", { how: "Pouts at the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">pout @user"] }],
+      ["stare @user", "Stare at someone", { how: "Stares at the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">stare @user"] }],
+      ["pouty @user", "Get pouty at someone", { how: "Gets pouty at the mentioned member.", args: [["<user>", "Target.", "required"]], ex: [">pouty @user"] }],
+      ["blush", "Blush", { how: "A self-only reaction GIF.", ex: [">blush"] }],
+      ["smug", "Look smug", { how: "A self-only reaction GIF.", ex: [">smug"] }],
+      ["dance", "Dance", { how: "A self-only reaction GIF.", ex: [">dance"] }],
+      ["cry", "Cry", { how: "A self-only reaction GIF.", ex: [">cry"] }],
+      ["smile", "Smile", { how: "A self-only reaction GIF.", ex: [">smile"] }],
+      ["think", "Think", { how: "A self-only reaction GIF.", ex: [">think"] }],
+      ["thumbsup", "Give a thumbs up", { how: "A self-only reaction GIF.", aliases: ["thumbs"], ex: [">thumbsup"] }],
+      ["nom", "Nom", { how: "A self-only reaction GIF.", ex: [">nom"] }],
+      ["yawn", "Yawn", { how: "A self-only reaction GIF.", ex: [">yawn"] }],
+      ["sleepy", "Look sleepy", { how: "A self-only reaction GIF.", aliases: ["sleep"], ex: [">sleepy"] }],
+      ["shy", "Act shy", { how: "A self-only reaction GIF.", ex: [">shy"] }],
+      ["ship @user1 @user2", "Ship two people", { how: "Ships two members. Fixed for the pair all day, with a GIF.", args: [["<user1>", "First person.", "required"], ["[user2]", "Defaults to you.", "optional"]], ex: [">ship @a @b"] }],
+      ["marry @user", "Marry someone", { how: "Proposes with a heart/cross reaction. The target must accept. Records the marriage and pays a one-time 50 coin bonus.", args: [["<user>", "The person you are proposing to.", "required"]], ex: [">marry @user"], notes: ["One marriage per member per server — divorce first.", "The 50 coin bonus only pays the first time a pair marries."] }],
+      ["divorce @user", "Divorce someone", { how: "Ends a recorded marriage with the mentioned member.", args: [["<user>", "Your current partner.", "required"]], ex: [">divorce @user"] }],
+      ["afk [reason]", "Mark yourself as away", { how: "Marks you AFK in this server. The next message you send clears it and reports how long you were gone.", aliases: ["away"], args: [["[reason]", "Why you are away. Default: AFK.", "optional"]], ex: [">afk", ">afk making dinner"] }],
+
+      /* Trivia */
+      ["trivia", "Answer a multiple-choice question", { how: "Four buttons, 30 seconds. A correct answer pays 75 coins.", ex: [">trivia"] }],
+      ["flags", "Guess the country from its flag", { how: "Four country buttons, 30 seconds. A correct answer pays 50 coins.", ex: [">flags"] }],
+      ["scramble", "Unscramble the word", { how: "Type the unscrambled word within 30 seconds for 60 coins.", ex: [">scramble"] }],
+      ["wordchain", "Start a word chain", { how: "Each reply must start with the last letter of the previous word. 10 coins per accepted word.", ex: [">wordchain"] }],
+      ["hangman", "Play hangman", { how: "Two letter menus, six misses allowed. Solving pays 100 coins.", ex: [">hangman"] }],
+      ["guess", "Guess the number 1-100", { how: "Ten attempts, arrow reactions tell you higher or lower. Correct pays 80 coins.", ex: [">guess"] }],
+
+      /* Economy */
+      ["daily", "Claim your daily coins", { how: "250 base plus a random bonus, once every 24 hours. Your streak multiplies the total.", ex: [">daily"] }],
+      ["streak", "Show your daily streak", { how: "Current streak, best streak, multiplier and your rank on the streak board.", ex: [">streak"] }],
+      ["balance [@user]", "Show your coins", { how: "Wallet, bank, level and casino record. Your own reply cleans itself up.", aliases: ["bal"], args: [["[@user]", "Default: you.", "optional"]], ex: [">balance", ">bal @user"] }],
+      ["bank deposit <amount>", "Move coins into your bank", { how: "Moves coins from your wallet to your bank. Accepts a number, all or half.", args: [["<amount>", "A number, all or half.", "required"]], ex: [">bank deposit 500", ">bank deposit all"] }],
+      ["bank withdraw <amount>", "Move coins out of your bank", { how: "Moves coins from your bank back to your wallet.", args: [["<amount>", "A number, all or half.", "required"]], ex: [">bank withdraw 250", ">bank withdraw half"] }],
+      ["richest", "The richest member right now", { how: "A one-line summary of whoever holds the most coins.", aliases: ["rich"], ex: [">richest"] }],
+      ["work", "Start or stop a passive job", { how: "With no job running it starts a shift. Run it again to stop and cash out. Rates rise the longer you stay: 15/min for the first hour, 25/min until 2h30, then 35/min, capped at 8 hours.", aliases: ["swork", "startwork", "stopwork", "sw"], ex: [">work", ">sw"], notes: ["A job must run at least a minute before it pays.", "Stopping starts a cooldown based on how long you worked."] }],
+      ["qwork", "Quick 2-minute job", { how: "Pays a fixed tier after 2 minutes and has a 5-minute cooldown from the moment you start. The first run pays a 150 coin welcome bonus.", aliases: ["quickwork", "qw"], ex: [">qwork", ">qw"], notes: ["One active job per member across both work modes."] }],
+      ["slots <bet>", "Play the slot machine", { how: "Three reels. Three of a kind pays x5 (x7 for sevens, x10 for diamonds), two of a kind pays x1.5.", args: [["<bet>", "A number, half or all.", "required"]], ex: [">slots 100"] }],
+      ["blackjack <bet>", "Play blackjack", { how: "Hit or stand against a dealer who draws to 17.", aliases: ["bj"], args: [["<bet>", "A number, half or all.", "required"]], ex: [">blackjack 100", ">bj 50"] }],
+      ["rob @user", "Try to rob someone", { how: "45% chance to steal 20-300 coins, otherwise you pay a fine. Five-minute cooldown.", args: [["<user>", "Target.", "required"]], ex: [">rob @user"] }],
+      ["shop", "Browse the shop", { how: "Lists every purchasable item and its price.", ex: [">shop"] }],
+      ["shop buy <item>", "Buy an item", { how: "Buys one item by its shop key.", args: [["<item>", "Shop key, e.g. lucky_coin.", "required"]], ex: [">shop buy lucky_coin"] }],
+      ["gift @user <amount>", "Give coins to someone", { how: "Sends coins from your wallet to another member.", args: [["<user>", "Recipient.", "required"], ["<amount>", "How many coins.", "required"]], ex: [">gift @user 250"] }],
+
+      /* Social */
+      ["baltop", "Richest members", { how: "Top 10 by wallet plus bank.", aliases: ["bt", "topbal", "leaderboard"], ex: [">baltop", ">bt", ">leaderboard"] }],
+      ["banktop", "Largest bank balances", { how: "Top 10 by bank balance only.", ex: [">banktop"] }],
+      ["leveltop", "Highest levels", { how: "Top 10 by XP level.", aliases: ["lt", "toplevel"], ex: [">leveltop", ">lt"] }],
+      ["wintop", "Most casino wins", { how: "Top 10 by slots and blackjack wins combined.", aliases: ["wt", "topwins"], ex: [">wintop"] }],
+      ["lbstats", "Leaderboard summary", { how: "Richest member, highest level and most wins in one embed.", aliases: ["lb", "statslb"], ex: [">lbstats"] }],
+      ["profile [@user]", "Your profile card", { how: "Level, coins, record, streak, inventory and progress. Your own profile cleans itself up; someone else's stays public.", args: [["[@user]", "Default: you.", "optional"]], ex: [">profile", ">profile @user"] }],
+      ["compare @a @b", "Compare two members", { how: "Compares coins, level and wins side by side.", args: [["<a>", "First member.", "required"], ["[b]", "Defaults to you.", "optional"]], ex: [">compare @a @b"] }],
+      ["stats", "Bot statistics", { how: "Servers, members, latency, uptime, command count, the most used command this session, and the version.", ex: [">stats"] }],
+      ["quote", "Turn a replied-to message into an image", { how: "Reply to a message, then run this to render it as a PNG quote card.", aliases: ["q"], ex: [">quote"], notes: ["Must be used as a reply.", "The command message is deleted; the image stays."] }],
+      ["reminder <duration> <text>", "Set a reminder", { how: "DMs you the text after the duration. One pending reminder per member.", aliases: ["remind"], args: [["<duration>", "Number plus s, m, h or d. Max 30 days.", "required"], ["<text>", "What to remind you about.", "required"]], ex: [">reminder 10m check the oven", ">remind 2h stretch"] }],
+      ["reminders", "Show your pending reminder", { how: "Shows your reminder and how long is left.", aliases: ["reminderlist"], ex: [">reminders"] }],
+      ["remindercancel", "Cancel your pending reminder", { how: "Removes your pending reminder.", aliases: ["rcancel"], ex: [">remindercancel"] }],
+
+      /* Time-wasters */
+      ["meme", "Random meme", { how: "A random meme image, with a fallback rotation if the API is down.", ex: [">meme"] }],
+      ["catfact", "A cat fact", { how: "A random cat fact, usually with a picture.", ex: [">catfact"] }],
+      ["dogfact", "A dog fact", { how: "A random dog fact, usually with a picture.", ex: [">dogfact"] }],
+      ["foxfact", "A fox fact", { how: "A random fox fact, usually with a picture.", ex: [">foxfact"] }],
+      ["joke", "A random joke", { how: "Setup with the punchline behind a spoiler.", ex: [">joke"] }],
+      ["randomquote", "A random quote", { how: "A random quote with its author.", aliases: ["quoterandom", "rquote"], ex: [">randomquote"] }],
+      ["urban <term>", "Look a term up on Urban Dictionary", { how: "Posts the top Urban Dictionary definition, capped at 1000 characters.", aliases: ["ud"], args: [["<term>", "What to look up.", "required"]], ex: [">urban yeet", ">ud rizz"], notes: ["Content may be NSFW."] }],
+
+      /* Info */
       ["ping", "Check bot latency", { how: "Shows round-trip latency.", ex: [">ping"] }],
-      ["serverinfo", "Info about this server", { how: "Server facts.", ex: [">serverinfo"] }],
-      ["userinfo", "Info about a user", { how: "User facts.", args: [["[user]", "Default: you.", "optional"]], ex: [">userinfo"] }],
-      ["avatar", "Show a user's avatar", { how: "Direct URL to avatar.", args: [["[user]", "Default: you.", "optional"]], ex: [">avatar @user"] }],
-      ["banner", "Show a user's banner", { how: "Direct URL to banner.", args: [["[user]", "Default: you.", "optional"]], ex: [">banner @user"] }],
-      ["roleinfo", "Info about a role", { how: "Role facts.", args: [["<role>", "Role.", "required"]], ex: [">roleinfo Verified"] }],
-      ["channelinfo", "Info about a channel", { how: "Channel facts.", args: [["[channel]", "Default: current.", "optional"]], ex: [">channelinfo"] }],
+      ["serverinfo", "Info about this server", { how: "Server facts.", aliases: ["si"], ex: [">serverinfo"] }],
+      ["userinfo [@user]", "Info about a user", { how: "User facts.", aliases: ["whois"], args: [["[@user]", "Default: you.", "optional"]], ex: [">userinfo", ">whois @user"] }],
+      ["avatar [@user]", "Show a user's avatar", { how: "Direct URL to the avatar.", aliases: ["av"], args: [["[@user]", "Default: you.", "optional"]], ex: [">avatar @user"] }],
+      ["banner [@user]", "Show a user's banner", { how: "Direct URL to the banner.", args: [["[@user]", "Default: you.", "optional"]], ex: [">banner @user"] }],
+      ["roleinfo <role>", "Info about a role", { how: "Role facts.", aliases: ["ri"], args: [["<role>", "Role.", "required"]], ex: [">roleinfo Verified"] }],
+      ["channelinfo [#channel]", "Info about a channel", { how: "Channel facts.", aliases: ["ci"], args: [["[#channel]", "Default: current.", "optional"]], ex: [">channelinfo"] }],
       ["uptime", "Show bot uptime", { how: "Bot online duration.", ex: [">uptime"] }],
-      ["help", "Show your personal command list", { how: "Shows your commands in Discord.", ex: [">help"] }],
-      ["roll", "Roll dice (e.g. 2d20)", { how: "Roll NdN dice.", args: [["[dice]", "Format NdN. Default 1d6.", "optional"]], ex: [">roll 2d20"] }],
-      ["coinflip", "Flip a coin", { how: "Heads or Tails.", ex: [">coinflip"] }],
-      ["8ball", "Ask the magic 8-ball", { how: "Random answer.", args: [["<question>", "Question.", "required"]], ex: [">8ball Will it rain?"] }]
+      ["help", "Show your personal command list", { how: "Shows your commands in Discord. The reply removes itself after 45 seconds.", ex: [">help"] }]
     ]
   }
 ];
@@ -3521,6 +3626,10 @@ function buildDocs(docs, syntax) {
   const parts = [];
 
   if (docs.how) parts.push(`<h4>How to Use</h4><p>${renderInlineCode(docs.how)}</p>`);
+
+  if (docs.aliases && docs.aliases.length) {
+    parts.push(`<div class="aliases">Aliases: ${docs.aliases.map(a => escapeHtml(`>${a}`)).join(", ")}</div>`);
+  }
 
   if (docs.args && docs.args.length) {
     parts.push(`<h4>Arguments</h4><ul>`);
@@ -5978,6 +6087,15 @@ loadMe().then(() => {
   else if (login === "failed") toast("The Discord login did not finish. Please try again.");
   else if (login === "unavailable") toast("Login is not set up yet. Ask an admin to add the Discord keys.");
   if (login) history.replaceState(null, "", location.pathname);
+
+  // Deep link from the Create Ticket button in Discord. The bot's panel builds
+  // `{MEMBER_SITE_URL}?open=support`, so opening that address has to land the
+  // member on the support form itself rather than the hub.
+  if (params.get("open") === "support") {
+    history.replaceState(null, "", location.pathname);
+    setTimeout(() => { try { openSupport(); } catch (err) { console.warn("[open=support]", err); } }, 350);
+  }
+
   if (hub.user) startTicketPolling(false);
 });
 /* ============================================================
@@ -7461,6 +7579,42 @@ async function pollStatus() {
   document.getElementById("swFoot").textContent = `Updated ${new Date().toLocaleTimeString()}`;
 }
 
+/* ---------- member bot heartbeat ----------
+   The member bot runs on Wispbyte, so this page cannot ask it anything
+   directly. It writes a row into Supabase's `bot_status` every 60 seconds
+   instead, and RLS lets the anon key read exactly that one table. Under three
+   minutes old counts as online; anything older means the process is down or
+   the project went to sleep. */
+let memberBotTimer = null;
+
+function fmtAge(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 90) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+async function pollMemberBot() {
+  const el = document.getElementById("swMemberBot");
+  if (!el) return;
+  let row = null;
+  try {
+    const rows = await supaFetch("bot_status?select=updated_at&id=eq.member&limit=1");
+    row = (rows && rows[0]) || null;
+  } catch (err) {
+    row = null;
+  }
+  if (!row || !row.updated_at) {
+    el.textContent = "unknown";
+    el.style.color = "var(--muted)";
+    return;
+  }
+  const age = (Date.now() - new Date(row.updated_at).getTime()) / 1000;
+  const online = age < 180;
+  el.textContent = `${online ? "online" : "offline"} \u00b7 ${fmtAge(age)}`;
+  el.style.color = online ? "" : "var(--muted)";
+}
+
 document.getElementById("swToggle").addEventListener("click", (e) => {
   e.stopPropagation();
   statusWidget.classList.toggle("open");
@@ -7687,6 +7841,8 @@ loadMemberProfile().then(() => {
 markLenisScrollables();
 pollStatus();
 statusTimer = setInterval(pollStatus, 15000);
+pollMemberBot();
+memberBotTimer = setInterval(pollMemberBot, 60000);
 </script>
 </body>
 </html>

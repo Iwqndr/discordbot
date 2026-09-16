@@ -40,6 +40,11 @@ from antiraid import (
     refresh_verification_panel,
     deploy_verification_panel,
     verification_role_ids,
+    load_ticket_panel_config,
+    save_ticket_panel_config,
+    refresh_ticket_panel,
+    deploy_ticket_panel,
+    ticket_support_url,
     member_is_verified,
     MESSAGE_LOG_DIR,
     DELETED_LOG_DIR,
@@ -355,7 +360,10 @@ def api_me():
 
 @app.route("/api/stats", methods=["GET"])
 def api_stats():
-    ping_val = 0 if math.isnan(bot.latency) else round(bot.latency * 1000)
+    # `bot.latency` is NaN before the first heartbeat and `inf` during the
+    # initial handshake — `round(inf)` raises OverflowError, so both have to be
+    # filtered out, not just NaN.
+    ping_val = 0 if (math.isnan(bot.latency) or math.isinf(bot.latency)) else round(bot.latency * 1000)
     user_str = str(bot.user) if bot.user else "Connecting..."
     vm = psutil.virtual_memory()
     net = psutil.net_io_counters()
@@ -2751,6 +2759,8 @@ DASH_CAPS = [
      "label": "Webhooks", "desc": "Create and edit channel webhooks."},
     {"id": "verification", "group": "Integrations", "icon": "badge-check",
      "label": "Verification panel", "desc": "Configure and post the verification panel."},
+    {"id": "ticket_panel", "group": "Integrations", "icon": "ticket",
+     "label": "Ticket panel", "desc": "Configure and post the Create Ticket panel."},
     {"id": "presence", "group": "System", "icon": "radio",
      "label": "Bot presence", "desc": "Change the bot's status and activity."},
     {"id": "console", "group": "System", "icon": "terminal",
@@ -3656,6 +3666,116 @@ def api_verification_deploy():
         "status": "success",
         "message": f"Verification panel deployed to #{channel.name}. It survives restarts now.",
     })
+
+
+# ==========================================================
+# TICKET PANEL (OWNER PANEL)
+#
+# The second editable panel. Its request and response shapes deliberately
+# mirror the verification endpoints above, so the frontend editor is the same
+# code pointed at a different URL.
+# ==========================================================
+
+# Identical key set to VERIFICATION_FIELDS, minus nothing: the editor reuses the
+# same controls, so the two configs stay in step.
+TICKET_PANEL_FIELDS = {
+    "role_ids", "title", "description", "color", "button_label",
+    "button_emoji", "button_style", "author_name", "author_icon_url",
+    "thumbnail_url", "image_url", "footer_text", "footer_icon_url",
+    "timestamp", "fields",
+}
+
+
+@app.route("/api/ticket-panel/config", methods=["GET", "POST"])
+def api_ticket_panel_config():
+    if request.method == "GET":
+        cfg = load_ticket_panel_config()
+        # The support link is derived, never stored, so the editor can always
+        # show the exact address the button will open.
+        cfg["support_url"] = ticket_support_url()
+        return jsonify(cfg)
+
+    data = request.json or {}
+    patch = {key: value for key, value in data.items() if key in TICKET_PANEL_FIELDS}
+    if not patch:
+        return _fail("Nothing to save.")
+
+    # A ticket panel grants no roles, so unlike the verification editor this
+    # does not require a role ID — it just ignores anything passed in.
+    patch.pop("role_ids", None)
+
+    if "fields" in patch:
+        patch["fields"] = _clean_verification_fields(patch.get("fields"))
+    if "timestamp" in patch:
+        patch["timestamp"] = bool(patch.get("timestamp"))
+    if "button_emoji" in patch:
+        patch["button_emoji"] = str(patch.get("button_emoji") or "").strip()[:64]
+    if "button_style" in patch:
+        style = str(patch.get("button_style") or "").strip().lower()
+        patch["button_style"] = style if style in VERIFICATION_BUTTON_STYLES else "success"
+
+    cfg = save_ticket_panel_config(patch)
+
+    # Push the new look onto the panel that is already posted, if there is one.
+    panel_updated = False
+    if bot is not None and getattr(bot, "loop", None) is not None:
+        try:
+            panel_updated = bool(_run(refresh_ticket_panel(bot), timeout=15))
+        except Exception:
+            panel_updated = False
+
+    message = "Ticket panel settings saved."
+    if not ticket_support_url():
+        message += " MEMBER_SITE_URL is not set, so the button will send plain text instead of a link."
+    if panel_updated:
+        message += " The live panel was updated."
+    elif cfg.get("panel_channel_id"):
+        message += " The existing panel could not be updated; redeploy it."
+    return jsonify({
+        "status": "success",
+        "message": message,
+        "config": cfg,
+        "support_url": ticket_support_url(),
+        "panel_updated": panel_updated,
+    })
+
+
+@app.route("/api/ticket-panel/deploy", methods=["POST"])
+def api_ticket_panel_deploy():
+    if bot is None:
+        return _fail("The bot is not connected yet.")
+    data = request.json or {}
+    channel_id = data.get("channel_id")
+    if not channel_id:
+        return _fail("Pick a channel to post the ticket panel in.")
+
+    guild = bot.get_guild(int(data["guild_id"])) if data.get("guild_id") else None
+    if guild is None:
+        guild = bot.guilds[0] if bot.guilds else None
+    if guild is None:
+        return _fail("Guild not found.", 404)
+
+    try:
+        channel = guild.get_channel(int(channel_id))
+    except (TypeError, ValueError):
+        channel = None
+    if channel is None or not isinstance(channel, discord.TextChannel):
+        return _fail("Pick a text channel for the ticket panel.", 404)
+
+    async def do_deploy():
+        return await deploy_ticket_panel(channel, bot.user)
+
+    try:
+        _run(do_deploy(), timeout=20)
+    except PanelError as e:
+        return _fail(str(e), 503)
+    except Exception as e:
+        return _fail(f"Could not deploy the panel: {e}")
+
+    message = f"Ticket panel deployed to #{channel.name}. It survives restarts now."
+    if not ticket_support_url():
+        message += " Set MEMBER_SITE_URL so the button links to the support form."
+    return jsonify({"status": "success", "message": message, "support_url": ticket_support_url()})
 
 
 # ==========================================================
@@ -5726,7 +5846,7 @@ def api_status():
     if guild is None:
         return jsonify({"status": "ok", "online": False})
 
-    ping = 0 if math.isnan(bot.latency) else round(bot.latency * 1000)
+    ping = 0 if (math.isnan(bot.latency) or math.isinf(bot.latency)) else round(bot.latency * 1000)
     try:
         online = sum(1 for m in guild.members if m.status is not discord.Status.offline)
     except Exception:

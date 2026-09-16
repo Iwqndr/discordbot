@@ -30,6 +30,7 @@ yarn-error.log*
 deleted_logs/
 message_logs/
 scratch/
+wispcord/
 
 automod_config.json
 dash_permissions.json
@@ -42,6 +43,7 @@ moderation_history.json
 selfpromo_channels.json
 thread_index.json
 tickets.json
+ticket_panel_config.json
 verification_config.json
 verification_logs.json
 watchlist.json
