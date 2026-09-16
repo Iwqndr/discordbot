@@ -606,11 +606,41 @@ def perform_git_push(commit_message: str, remote_name: str,
     if r.returncode != 0:
         return GitResult(success=False, message=f"git commit failed: {r.stderr.strip()}")
 
-    r = _run_git("push", remote_name, check=True, timeout=180)
+    r = _run_git("push", remote_name, timeout=180)
     if r.returncode != 0:
-        return GitResult(success=False, message=f"git push failed: {r.stderr.strip()}")
+        detail = (r.stderr or r.stdout).strip()
+        # A non-fast-forward means somebody else pushed first (a GitHub web
+        # edit, another clone). Try to rebase onto it once, so the button works
+        # without a manual pull; only report a failure if that does not resolve.
+        if "rejected" in detail or "fetch first" in detail or "non-fast-forward" in detail:
+            return _rebase_and_retry_push(remote_name, detail)
+        return GitResult(success=False, message=f"git push failed: {detail}")
 
     return GitResult(success=True, message=f"Pushed to '{remote_name}'.")
+
+
+def _rebase_and_retry_push(remote_name: str, detail: str) -> GitResult:
+    """Fetch, rebase the local commit on top, then push again."""
+    branch = _current_branch()
+    fetch = _run_git("fetch", remote_name, timeout=120)
+    if fetch.returncode != 0:
+        return GitResult(success=False, message=f"git fetch failed: {(fetch.stderr or fetch.stdout).strip()}")
+
+    rebase = _run_git("rebase", f"{remote_name}/{branch}", timeout=120)
+    if rebase.returncode != 0:
+        _run_git("rebase", "--abort")
+        return GitResult(
+            success=False,
+            message=("The remote has changes that conflict with your commit. Your work is saved "
+                     "locally in that commit — open a terminal and run `git rebase origin/main`, "
+                     "resolve the files it lists, then push again.\n" + detail),
+        )
+
+    retry = _run_git("push", remote_name, timeout=180)
+    if retry.returncode != 0:
+        return GitResult(success=False, message=f"git push failed after rebase: {(retry.stderr or retry.stdout).strip()}")
+
+    return GitResult(success=True, message=f"Rebased onto {remote_name}/{branch} and pushed.")
 
 
 GIT_UI_HTML = r"""<!DOCTYPE html>
