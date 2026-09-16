@@ -336,6 +336,70 @@ def auth_logout():
     return redirect(_safe_next(request.args.get("next"), "/"))
 
 
+# ---------------------------------------------------------------------------
+# Handoff from the member site
+# ---------------------------------------------------------------------------
+
+PANEL_HANDOFF_SECRET = (os.getenv("PANEL_HANDOFF_SECRET") or "").strip()
+
+
+def _handoff_signature(uid: str, expires: str) -> str:
+    import hashlib
+    import hmac
+
+    message = f"{uid}.{expires}".encode("utf-8")
+    return hmac.new(PANEL_HANDOFF_SECRET.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+@app.route("/auth/handoff")
+def auth_handoff():
+    """Accept an already-signed-in member coming from the member site.
+
+    The member site authenticates people with its own signed cookie, so without
+    this they would have to authorise with Discord a second time just to open
+    the panel. Instead the Worker signs `uid.expires` with a secret both sides
+    hold, and the panel trusts that signature rather than running OAuth again.
+
+    A missing secret, a bad signature or an expired stamp all fall through to
+    the normal Discord login — never an error page, and never a session.
+    """
+    back = _safe_next(request.args.get("next"), "/admin")
+    login = f"{back}{'&' if '?' in back else '?'}login=failed"
+
+    if not PANEL_HANDOFF_SECRET:
+        return redirect(login)
+
+    uid = str(request.args.get("uid") or "").strip()
+    expires = str(request.args.get("expires") or "").strip()
+    signature = str(request.args.get("sig") or "").strip()
+    if not uid.isdigit() or not expires.isdigit() or not signature:
+        return redirect(login)
+
+    import hmac as _hmac
+
+    if not _hmac.compare_digest(signature, _handoff_signature(uid, expires)):
+        print(f"[handoff] rejected a bad signature for {uid}")
+        return redirect(login)
+
+    if time.time() > int(expires):
+        print(f"[handoff] rejected an expired handoff for {uid}")
+        return redirect(login)
+
+    row = None
+    try:
+        row = fetch_member(uid)
+    except Exception:
+        row = None
+
+    session["member"] = {
+        "user_id": uid,
+        "username": (row or {}).get("username") or "",
+        "display_name": (row or {}).get("display_name") or (row or {}).get("username") or "",
+        "avatar_url": (row or {}).get("avatar_url") or "",
+    }
+    return redirect(f"{back}{'&' if '?' in back else '?'}login=ok")
+
+
 @app.route("/api/me", methods=["GET"])
 def api_me():
     member = _current_member()

@@ -10,7 +10,7 @@
 // So this page does one job: it reads the tunnel address the host machine
 // published and offers it as a link.
 
-import { fail, supa } from "./_lib/core.js";
+import { currentUser, supa } from "./_lib/core.js";
 
 /** The address `main.py` last published, or null. */
 export async function tunnelInfo(env) {
@@ -19,6 +19,58 @@ export async function tunnelInfo(env) {
   const url = String(row?.version ?? "").trim().replace(/\/+$/, "");
   if (!url) return null;
   return { url, seenAt: row?.updated_at || null };
+}
+
+function toHex(buffer) {
+  return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * The panel's signature over `uid.expires`, as hex HMAC-SHA256.
+ *
+ * The panel computes the same string with `hmac.new(secret, msg, sha256)` and
+ * compares, so this has to match that exactly rather than invent a second
+ * scheme. The secret is `PANEL_HANDOFF_SECRET`, held by both sides.
+ */
+async function handoffSignature(env, uid, expires) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.PANEL_HANDOFF_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const mac = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`${uid}.${expires}`)
+  );
+  return toHex(mac);
+}
+
+/**
+ * Redirect straight into the panel, already authenticated.
+ *
+ * Without this a member who signed in on the member page has to authorise with
+ * Discord a second time to open the panel, because the two keep separate
+ * sessions on separate origins. The panel verifies this signature and creates
+ * its session from it, so one login covers both.
+ *
+ * Returns null when the handoff is not configured or the member is not signed
+ * in, so the caller can fall back to the plain link page.
+ */
+async function handoffUrl(request, env, tunnelUrl) {
+  if (!env.PANEL_HANDOFF_SECRET) return null;
+
+  const uid = await currentUser(request, env);
+  if (!uid) return null;
+
+  const expires = String(Math.floor(Date.now() / 1000) + 120);
+  const sig = await handoffSignature(env, uid, expires).catch(() => null);
+  if (!sig) return null;
+
+  const params = new URLSearchParams({ uid: String(uid), expires, sig, next: "/admin" });
+  return `${tunnelUrl}/auth/handoff?${params.toString()}`;
 }
 
 function page({ url, seenAt, stale }) {
@@ -108,7 +160,7 @@ function page({ url, seenAt, stale }) {
   });
 }
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ request, env }) {
   let info = null;
   try {
     info = await tunnelInfo(env);
@@ -136,5 +188,17 @@ export async function onRequestGet({ env }) {
   }
 
   const age = info.seenAt ? (Date.now() - new Date(info.seenAt).getTime()) / 1000 : Infinity;
+
+  // Already signed in on the member page: go straight in, no second Discord
+  // authorisation. Falls through to the link page when the handoff is not
+  // configured or the visitor is not signed in.
+  const direct = await handoffUrl(request, env, info.url).catch(() => null);
+  if (direct) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: direct, "Cache-Control": "no-store" },
+    });
+  }
+
   return page({ ...info, stale: age > 600 });
 }
