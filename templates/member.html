@@ -3831,10 +3831,12 @@ function openProfile(member) {
 
       ${typeof progressionHtml === "function" ? progressionHtml(member, 6) : ""}
 
-      <div class="profile-section-title" style="--i: 7">Roles</div>
+      ${profileEconomyHtml(member, 7)}
+
+      <div class="profile-section-title" style="--i: 8">Roles</div>
       <div class="profile-roles">${roleChips || '<span style="color: var(--muted); font-size: 13px;">No roles</span>'}</div>
 
-      <div class="profile-section-title" style="--i: 8">Details</div>
+      <div class="profile-section-title" style="--i: 9">Details</div>
       <div class="profile-meta">
         ${metaRow("id", "User ID", escapeHtml(member.user_id))}
         ${metaRow("calendar", "Joined", escapeHtml(joined.exact), joined.ago)}
@@ -3845,6 +3847,44 @@ function openProfile(member) {
   `;
 
   openProfilePanel();
+}
+
+/* The member bot mirrors its economy into Supabase once a minute, so this is
+   the same data `>balance` shows in Discord. `member.economy` is null until
+   the bot has published a row for that account. */
+function profileEconomyHtml(member, slot) {
+  const e = member.economy;
+  if (!e) {
+    return `
+      <div class="profile-section-title" style="--i: ${slot}">Economy</div>
+      <div class="profile-bio empty" style="--i: ${slot}">No economy record yet.</div>`;
+  }
+
+  const coins = "\u{1FA99}";
+  const floor = 50 * e.level ** 2;
+  const next = 50 * (e.level + 1) ** 2;
+  const into = Math.max(0, e.xp - floor);
+  const span = Math.max(1, next - floor);
+  const pct = Math.min(100, Math.round((into / span) * 100));
+  const played = e.wins + e.losses;
+  const record = played ? `${e.wins}W / ${e.losses}L` : "-";
+
+  return `
+    <div class="profile-section-title" style="--i: ${slot}">Economy</div>
+    <div class="prog" style="--i: ${slot}">
+      <div class="prog-top"><span>Level ${e.level}</span><span>${into.toLocaleString()} / ${span.toLocaleString()} xp</span></div>
+      <div class="prog-track"><div class="prog-fill" style="width: ${pct}%"></div></div>
+      <div class="prog-stats">
+        <div><b>${Number(e.balance || 0).toLocaleString()}</b><span>wallet ${coins}</span></div>
+        <div><b>${Number(e.bank || 0).toLocaleString()}</b><span>bank</span></div>
+        <div><b>${Number(e.total || 0).toLocaleString()}</b><span>total</span></div>
+      </div>
+      <div class="prog-stats">
+        <div><b>${escapeHtml(record)}</b><span>casino</span></div>
+        <div><b>${e.streak > 0 ? e.streak : "-"}</b><span>day streak</span></div>
+        <div><b>${Number(e.xp || 0).toLocaleString()}</b><span>total xp</span></div>
+      </div>
+    </div>`;
 }
 
 /* Copy buttons in the panel: the label flips to a confirmation for a moment
