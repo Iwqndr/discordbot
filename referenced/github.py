@@ -533,8 +533,11 @@ def _sync_view() -> dict:
     keep = set(settings.get("keep") or [])
 
     files = []
+    kept_count = 0
     for rel in _repo_files():
         kept = rel in keep if keep else _sensible_default(rel)
+        if kept:
+            kept_count += 1
         files.append({
             "path": rel,
             "keep": kept,
@@ -546,6 +549,7 @@ def _sync_view() -> dict:
         "setup": True,
         "files": files,
         "keep": sorted(keep),
+        "kept_count": kept_count,
         "rules_saved": bool(keep),
         "changed_at": settings.get("updated_at") or 0,
     }
@@ -1847,9 +1851,11 @@ async function loadSync() {
     const data = await getJSON("/api/git/keep");
     state.syncRows = data.files || [];
     state.syncKeep = new Set(state.syncRows.filter(r => r.keep).map(r => r.path));
+    const changed = state.syncRows.filter(r => r.changed).length;
     document.getElementById("syncSub").textContent = data.rules_saved
-      ? "Saved rules are active. Every push stages only the ticked files below."
-      : "No rules saved yet — the push currently sends everything. Tick the files you want to keep sending, then Save rules.";
+      ? `Saved rules are active. Every push stages only the ${state.syncKeep.size} ticked file(s). ` +
+        `Anything unticked is never sent${changed ? ` — right now that is holding back ${changed} changed file(s)` : ""}.`
+      : "No rules saved yet, so a push sends every file the repo tracks. Tick the files you want to keep sending, then Save rules.";
     syncRender();
   } catch (e) {
     el.innerHTML = '<div class="empty"><div class="t">Could not load files</div><div class="s">' + esc(e.message) + '</div></div>';

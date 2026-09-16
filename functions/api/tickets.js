@@ -9,7 +9,15 @@
 // The rows also have to satisfy the filter below, so the Worker cannot be
 // tricked into returning another user's tickets by a crafted query string.
 
-import { currentUser, fail, newTicketId, ok, shapeTicket, supa } from "../_lib/core.js";
+import {
+  currentUser,
+  fail,
+  newTicketId,
+  ok,
+  route,
+  shapeTicket,
+  supa,
+} from "../_lib/core.js";
 
 function normaliseTier(value) {
   const text = String(value || "").trim().toLowerCase();
@@ -43,7 +51,7 @@ async function repliesFor(env, uid, ticketIds) {
   return grouped;
 }
 
-export async function onRequestGet({ request, env }) {
+async function onRequestGet({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -69,7 +77,7 @@ export async function onRequestGet({ request, env }) {
   });
 }
 
-export async function onRequestPost({ request, env }) {
+async function onRequestPost({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -122,3 +130,7 @@ export async function onRequestPost({ request, env }) {
   const stored = Array.isArray(indexed.rows) ? indexed.rows[0] : row;
   return ok({ ticket: shapeTicket(stored) });
 }
+
+export const onRequestGet = route("api/tickets", onRequestGet);
+
+export const onRequestPost = route("api/tickets", onRequestPost);

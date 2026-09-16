@@ -70,3 +70,14 @@ logging/deleted_logs/
 logging/*.log
 logging/*.log.err
 logging/run.md
+
+# The GitHub sync allow-list is local tooling state: it is written by the
+# /git panel and describes what *this* machine sends. It never needs to travel.
+logging/github_settings.json
+
+# NOT ignored: templates/functions/. It is the Cloudflare Pages Functions
+# package, so it has to be pushable — the Sync tab lists it and Cloudflare
+# builds it. (Flask only ever looks up .html files here, so the folder is inert
+# on the bot side.)
+#
+# `pages/` also holds the package, plus schema.sql and the README.

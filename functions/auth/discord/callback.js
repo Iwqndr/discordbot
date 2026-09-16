@@ -8,9 +8,9 @@ import {
   discordToken,
   discordUser,
   hasEnv,
-  publicMember,
   readState,
   sessionCookie,
+  sign,
   unsign,
 } from "../../_lib/core.js";
 
@@ -22,6 +22,17 @@ export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   const origin = url.origin;
 
+  // Nothing below may escape: an uncaught throw here is a Cloudflare 1101
+  // ("Worker threw exception") instead of a login the member can retry.
+  try {
+    return await finishLogin(request, env, url, origin);
+  } catch (err) {
+    console.error("discord callback failed:", err && err.stack ? err.stack : String(err));
+    return bounce(origin, "login=failed");
+  }
+}
+
+async function finishLogin(request, env, url, origin) {
   if (!hasEnv(env, "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SESSION_SECRET")) {
     return bounce(origin, "login=unavailable");
   }

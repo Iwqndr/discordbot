@@ -4,11 +4,16 @@
 // writes to the ticket the staff see. The queue row is what the member page
 // reads back, so their own message appears immediately.
 
-import { currentUser, fail, ok } from "../../../_lib/core.js";
+import {
+  currentUser,
+  fail,
+  ok,
+  route,
+} from "../../../_lib/core.js";
 import { findTicket, ticketWithReplies } from "../../../_lib/tickets.js";
 import { supa } from "../../../_lib/core.js";
 
-export async function onRequestPost({ request, env, params }) {
+async function onRequestPost({ request, env, params }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -48,3 +53,5 @@ export async function onRequestPost({ request, env, params }) {
   const fresh = await findTicket(env, uid, id);
   return ok({ ticket: await ticketWithReplies(env, uid, fresh || row) });
 }
+
+export const onRequestPost = route("api/tickets/[id]/reply", onRequestPost);

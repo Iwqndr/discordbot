@@ -3,9 +3,15 @@
 // The case picker on the appeal form. Only the caller's own cases are returned,
 // identified by their Discord id, and only the fields the picker renders.
 
-import { currentUser, fail, ok, supa } from "../_lib/core.js";
+import {
+  currentUser,
+  fail,
+  ok,
+  route,
+  supa,
+} from "../_lib/core.js";
 
-export async function onRequestGet({ request, env }) {
+async function onRequestGet({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Sign in with Discord to pick a case, or type the case id below.", 401);
 
@@ -31,3 +37,5 @@ export async function onRequestGet({ request, env }) {
 
   return ok({ cases });
 }
+
+export const onRequestGet = route("api/my-cases", onRequestGet);

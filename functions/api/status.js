@@ -3,7 +3,11 @@
 // The member page polls this every few seconds for the status widget. It must
 // answer fast and never throw: a Supabase hiccup just means "offline".
 
-import { ok, supa } from "../_lib/core.js";
+import {
+  ok,
+  route,
+  supa,
+} from "../_lib/core.js";
 
 const ONLINE_WINDOW_SECONDS = 180;
 
@@ -13,7 +17,7 @@ function ageSeconds(stamp) {
   return (Date.now() - then) / 1000;
 }
 
-export async function onRequestGet({ env }) {
+async function onRequestGet({ env }) {
   const res = await supa(env, "bot_status?select=*");
 
   if (!res.ok || !Array.isArray(res.rows)) {
@@ -64,3 +68,5 @@ export async function onRequestGet({ env }) {
 
   return ok(payload);
 }
+
+export const onRequestGet = route("api/status", onRequestGet);

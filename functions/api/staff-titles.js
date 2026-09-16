@@ -8,9 +8,13 @@
 //   { id, label, prefix, suffix, priority, roles: ["<role id>", ...],
 //     keywords: ["moderator", ...], style: { <the admin editor's style object> } }
 
-import { ok, supa } from "../_lib/core.js";
+import {
+  ok,
+  route,
+  supa,
+} from "../_lib/core.js";
 
-export async function onRequestGet({ env }) {
+async function onRequestGet({ env }) {
   const res = await supa(env, "staff_titles?select=*&order=priority.desc");
 
   if (!res.ok || !Array.isArray(res.rows)) {
@@ -33,3 +37,5 @@ export async function onRequestGet({ env }) {
 
   return ok({ titles });
 }
+
+export const onRequestGet = route("api/staff-titles", onRequestGet);

@@ -6,9 +6,16 @@
 // Anything the anon key cannot read (bans, timeouts) is reported honestly as
 // unknown instead of guessed at.
 
-import { currentUser, fail, ok, shapeTicket, supa } from "../../_lib/core.js";
+import {
+  currentUser,
+  fail,
+  ok,
+  route,
+  shapeTicket,
+  supa,
+} from "../../_lib/core.js";
 
-export async function onRequestGet({ request, env }) {
+async function onRequestGet({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -61,3 +68,5 @@ export async function onRequestGet({ request, env }) {
     tickets,
   });
 }
+
+export const onRequestGet = route("api/me/history", onRequestGet);

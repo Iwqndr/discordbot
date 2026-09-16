@@ -3,10 +3,15 @@
 // Closing is a status flip on the member's own row. It does not delete
 // anything, so staff history survives.
 
-import { currentUser, fail, ok } from "../../../_lib/core.js";
+import {
+  currentUser,
+  fail,
+  ok,
+  route,
+} from "../../../_lib/core.js";
 import { findTicket, patchTicket, ticketWithReplies } from "../../../_lib/tickets.js";
 
-export async function onRequestPost({ request, env, params }) {
+async function onRequestPost({ request, env, params }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -25,3 +30,5 @@ export async function onRequestPost({ request, env, params }) {
 
   return ok({ ticket: await ticketWithReplies(env, uid, updated) });
 }
+
+export const onRequestPost = route("api/tickets/[id]/close", onRequestPost);

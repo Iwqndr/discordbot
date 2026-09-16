@@ -4,7 +4,14 @@
 // button is usable and who the visitor is. It must never fail hard, because a
 // 404 here is what made the page look broken before.
 
-import { currentUser, hasEnv, ok, supa, titleForRoles } from "../_lib/core.js";
+import {
+  currentUser,
+  hasEnv,
+  ok,
+  route,
+  supa,
+  titleForRoles,
+} from "../_lib/core.js";
 
 async function openTicketCount(env, uid) {
   const res = await supa(
@@ -15,7 +22,7 @@ async function openTicketCount(env, uid) {
   return res.rows.length;
 }
 
-export async function onRequestGet({ request, env }) {
+async function onRequestGet({ request, env }) {
   const oauthReady = hasEnv(env, "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SESSION_SECRET");
   const uid = await currentUser(request, env);
 
@@ -54,3 +61,5 @@ export async function onRequestGet({ request, env }) {
     staff_title: staffTitle,
   });
 }
+
+export const onRequestGet = route("api/me", onRequestGet);

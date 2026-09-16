@@ -7,7 +7,12 @@
 // into `ticket-attachments`, and only with an image content type, so a bad key
 // cannot be used as general-purpose file hosting.
 
-import { currentUser, fail, ok } from "../../_lib/core.js";
+import {
+  currentUser,
+  fail,
+  ok,
+  route,
+} from "../../_lib/core.js";
 
 const BUCKET = "ticket-attachments";
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -33,7 +38,7 @@ function extensionFor(type) {
   }
 }
 
-export async function onRequestPost({ request, env }) {
+async function onRequestPost({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -85,3 +90,5 @@ export function onRequestOptions() {
     headers: { Allow: "POST, OPTIONS", "Cache-Control": "no-store" },
   });
 }
+
+export const onRequestPost = route("api/tickets/upload", onRequestPost);

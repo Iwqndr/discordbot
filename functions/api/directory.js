@@ -6,7 +6,11 @@
 //
 // The bot drops bots before syncing, so there is no `bot` column to filter on.
 
-import { ok, supa } from "../_lib/core.js";
+import {
+  ok,
+  route,
+  supa,
+} from "../_lib/core.js";
 
 const COLUMNS = [
   "user_id",
@@ -20,7 +24,7 @@ const COLUMNS = [
   "created_at",
 ].join(",");
 
-export async function onRequestGet({ env }) {
+async function onRequestGet({ env }) {
   const res = await supa(env, `members?select=${COLUMNS}&order=display_name.asc`);
 
   if (!res.ok || !Array.isArray(res.rows)) {
@@ -51,3 +55,5 @@ export async function onRequestGet({ env }) {
 
   return ok({ members });
 }
+
+export const onRequestGet = route("api/directory", onRequestGet);

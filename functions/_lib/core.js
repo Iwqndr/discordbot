@@ -313,3 +313,42 @@ export function titleForRoles(titles, roles) {
   }
   return best;
 }
+
+// ---------------------------------------------------------------------------
+// Route wrapper
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrap a handler so an unexpected throw becomes a JSON 502 instead of a
+ * Cloudflare 1101 "Worker threw exception" page. The full stack still goes to
+ * `console.error`, which is what the Pages project's Logs tab shows.
+ *
+ * The `/auth/*` redirects use their own version, because a browser navigating
+ * there needs a redirect rather than a JSON body.
+ */
+export function route(name, handler) {
+  return async (context) => {
+    try {
+      return await handler(context);
+    } catch (err) {
+      console.error(`[${name}] ${err && err.stack ? err.stack : String(err)}`);
+      return fail(`${name} failed unexpectedly — see the Worker logs.`, 502);
+    }
+  };
+}
+
+/**
+ * The `/auth/*` variant: a browser navigates there, so a thrown error has to
+ * land back on the member page with `?login=failed` rather than a JSON body.
+ */
+export function routeRedirect(name, handler) {
+  return async (context) => {
+    const origin = new URL(context.request.url).origin;
+    try {
+      return await handler(context);
+    } catch (err) {
+      console.error(`[${name}] ${err && err.stack ? err.stack : String(err)}`);
+      return Response.redirect(`${origin}/?login=failed`, 302);
+    }
+  };
+}

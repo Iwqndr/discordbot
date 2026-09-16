@@ -5,11 +5,18 @@
 // localStorage copy as well, so a failure here degrades to "saved on this
 // browser only" rather than losing what they typed.
 
-import { currentUser, fail, ok, supa, supaUpsert } from "../../_lib/core.js";
+import {
+  currentUser,
+  fail,
+  ok,
+  route,
+  supa,
+  supaUpsert,
+} from "../../_lib/core.js";
 
 const FIELDS = ["bio", "show_nickname", "name_color", "name_font", "name_effect"];
 
-export async function onRequestGet({ request, env }) {
+async function onRequestGet({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -22,7 +29,7 @@ export async function onRequestGet({ request, env }) {
   return ok({ profile: row ? pick(row) : null });
 }
 
-export async function onRequestPost({ request, env }) {
+async function onRequestPost({ request, env }) {
   const uid = await currentUser(request, env);
   if (!uid) return fail("Log in with Discord first.", 401);
 
@@ -51,3 +58,7 @@ function pick(source) {
   if (out.bio !== undefined) out.bio = String(out.bio).slice(0, 400);
   return out;
 }
+
+export const onRequestGet = route("api/me/profile", onRequestGet);
+
+export const onRequestPost = route("api/me/profile", onRequestPost);
