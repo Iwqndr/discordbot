@@ -87,7 +87,16 @@ export async function proxyToPanel(request, env, { stripPrefix, base = null }) {
     upstream = await fetch(target, init);
   } catch (err) {
     console.error(`[panel] upstream failed for ${target}: ${err}`);
-    return fail("The admin panel did not answer. It may have just restarted.", 502);
+    return offlineResponse();
+  }
+
+  // A 502/503 from loca.lt means the tunnel registration is gone — the machine
+  // is off, or the tunnel is still starting. Passing that through shows the
+  // browser a bare "Bad gateway", which says nothing; this explains it and
+  // says where to look.
+  if (upstream.status === 502 || upstream.status === 503) {
+    console.error(`[panel] tunnel returned ${upstream.status} for ${target}`);
+    return offlineResponse(upstream.status);
   }
 
   const out = new Headers();
@@ -101,6 +110,39 @@ export async function proxyToPanel(request, env, { stripPrefix, base = null }) {
   out.set("Cache-Control", "no-store");
 
   return new Response(upstream.body, { status: upstream.status, headers: out });
+}
+
+/** A page a person can read, rather than a JSON blob or a raw gateway error. */
+function offlineResponse(status = 503) {
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panel offline</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center;
+         font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;
+         background:#f5f3ef; color:#2b2723; }
+  @media (prefers-color-scheme: dark) { body { background:#1a1815; color:#efe9e0; } }
+  .card { max-width:430px; padding:32px 30px; border-radius:18px;
+          background:rgba(255,255,255,.75); border:1px solid rgba(0,0,0,.07);
+          box-shadow:0 12px 40px rgba(0,0,0,.08); text-align:center; }
+  @media (prefers-color-scheme: dark) { .card { background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.09); } }
+  h1 { font-size:19px; margin:0 0 10px; }
+  p { margin:0 0 8px; opacity:.8; }
+  code { background:rgba(0,0,0,.06); padding:2px 7px; border-radius:6px; font-size:13px; }
+  @media (prefers-color-scheme: dark) { code { background:rgba(255,255,255,.09); } }
+</style></head>
+<body><div class="card">
+  <h1>The admin panel is offline</h1>
+  <p>The panel runs on the host machine, and the tunnel to it is not answering.</p>
+  <p>Start <code>main.py</code> on that machine and reload this page.</p>
+</div></body></html>`;
+
+  return new Response(html, {
+    status,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+  });
 }
 
 /** True when this request is a sub-resource of a page served from /panel. */

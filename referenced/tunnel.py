@@ -1,25 +1,3 @@
-"""localtunnel for the admin panel.
-
-`main.py` starts this alongside Flask, so the panel that only exists on this
-machine gets a stable public address:
-
-    https://<LOCALTUNNEL_SUBDOMAIN>.loca.lt
-
-`jamesheston.pages.dev/dashboard` redirects into a Worker proxy, which forwards
-to that address and adds the header localtunnel wants — see
-`functions/panel-proxy.js`. Without that header a browser gets localtunnel's
-"Tunnel website ahead!" page first, which is what the proxy exists to hide.
-
-The subdomain is fixed, so unlike a quick Cloudflare tunnel the address does not
-change between restarts. It only changes if you change the setting.
-
-Set `LOCALTUNNEL_SUBDOMAIN=jamesheston` (the default) and, if you want a
-different local port, `LOCALTUNNEL_PORT`.
-
-Everything here is best-effort: if npx is missing or the tunnel fails, the panel
-keeps working locally and the bot is unaffected.
-"""
-
 import os
 import re
 import subprocess
@@ -36,9 +14,17 @@ DEFAULT_SUBDOMAIN = "jamesheston"
 _process = None
 _public_url = None
 _lock = threading.Lock()
-# Last few lines cloudflared/localtunnel printed, kept so a start that dies
-# instantly can report why instead of just "it failed".
+# Last few lines localtunnel printed, kept so a start that dies instantly can
+# report why instead of just "it failed".
 _early_output: list = []
+
+# Health watchdog. A tunnel can go dead while its process stays alive, so the
+# public address is polled and the client restarted when it stops answering.
+HEALTH_INTERVAL = 60
+HEALTH_FAILURES = 3
+HEALTH_MAX_RESTARTS = 5
+_restarts = 0
+_health_thread = None
 
 
 def subdomain() -> str:
@@ -211,6 +197,12 @@ def start(port: int) -> bool:
              f"{target} --subdomain {name}` by hand to reproduce it.")
         _unpublish()
         return False
+
+    global _health_thread
+    if _health_thread is None or not _health_thread.is_alive():
+        _health_thread = threading.Thread(target=_health_loop, args=(target,), daemon=True)
+        _health_thread.start()
+
     return True
 
 
@@ -220,6 +212,66 @@ def _watch(process: subprocess.Popen) -> None:
     code = process.returncode
     if code not in (0, None):
         error(f"Panel tunnel stopped (exit {code}). The panel is local only until it restarts.")
+
+
+def _healthy(url: str, timeout: int = 12) -> bool:
+    """Can loca.lt actually reach this tunnel right now?
+
+    A tunnel can die without its process exiting: the connection drops, the
+    client stays up, and loca.lt starts answering "503 Tunnel Unavailable"
+    while `start()` still believes everything is fine. The only reliable check
+    is to ask the public address.
+    """
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(
+            url + "/",
+            headers={"User-Agent": "wispcord-tunnel-health", "Bypass-Tunnel-Reminder": "true"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            return res.status < 500
+    except Exception:
+        return False
+
+
+def _health_loop(port: int) -> None:
+    """Restart the tunnel when it stops carrying traffic.
+
+    Three consecutive failures before acting: one miss is usually a blip, and
+    restarting on it would thrash the subdomain.
+    """
+    global _restarts
+    misses = 0
+
+    while True:
+        time.sleep(HEALTH_INTERVAL)
+        url = public_url()
+        if not url:
+            continue
+        if _healthy(url):
+            misses = 0
+            continue
+
+        misses += 1
+        warn(f"Panel tunnel health check failed ({misses}/{HEALTH_FAILURES}).")
+        if misses < HEALTH_FAILURES:
+            continue
+
+        misses = 0
+        _restarts += 1
+        if _restarts > HEALTH_MAX_RESTARTS:
+            error("Panel tunnel keeps failing to stay up, so automatic restarts have stopped. "
+                  f"Run `npx localtunnel --port {port}` by hand to see the error. "
+                  "The panel is local only until then.")
+            _unpublish()
+            return
+
+        warn(f"Panel tunnel is not carrying traffic — restarting it "
+             f"({_restarts}/{HEALTH_MAX_RESTARTS}).")
+        stop()
+        if not start(port):
+            return
 
 
 def stop() -> None:
