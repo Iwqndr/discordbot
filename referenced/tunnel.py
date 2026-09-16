@@ -1,20 +1,23 @@
-"""Cloudflare tunnel for the admin panel.
+"""localtunnel for the admin panel.
 
 `main.py` starts this alongside Flask, so the panel that only exists on this
-machine becomes reachable at a public https:// address — which is what
-`jamesheston.pages.dev/dashboard` redirects to.
+machine gets a stable public address:
 
-Two ways to run:
+    https://<LOCALTUNNEL_SUBDOMAIN>.loca.lt
 
-* **Quick tunnel** (default, no account needed). `cloudflared tunnel --url
-  http://localhost:5000` prints a random `https://<words>.trycloudflare.com`
-  on every start. That address is published to Supabase so the Pages site can
-  always find the current one.
-* **Named tunnel** (needs a domain on Cloudflare). Set `CLOUDFLARE_TUNNEL_TOKEN`
-  and the hostname is stable, so the redirect never has to change.
+`jamesheston.pages.dev/dashboard` redirects into a Worker proxy, which forwards
+to that address and adds the header localtunnel wants — see
+`functions/panel-proxy.js`. Without that header a browser gets localtunnel's
+"Tunnel website ahead!" page first, which is what the proxy exists to hide.
 
-Everything here is best-effort: if cloudflared is missing or the tunnel fails,
-the panel keeps working locally and the bot is unaffected.
+The subdomain is fixed, so unlike a quick Cloudflare tunnel the address does not
+change between restarts. It only changes if you change the setting.
+
+Set `LOCALTUNNEL_SUBDOMAIN=jamesheston` (the default) and, if you want a
+different local port, `LOCALTUNNEL_PORT`.
+
+Everything here is best-effort: if npx is missing or the tunnel fails, the panel
+keeps working locally and the bot is unaffected.
 """
 
 import os
@@ -26,34 +29,17 @@ import time
 
 from console import debug, error, info, warn
 
-# The public address cloudflared prints, e.g. https://calm-river-1234.trycloudflare.com
-_URL_RE = re.compile(r"https://[a-z0-9][a-z0-9-]*\.trycloudflare\.com", re.I)
+# "your url is: https://jamesheston.loca.lt"
+_URL_RE = re.compile(r"https://([a-z0-9][a-z0-9-]*)\.loca\.lt", re.I)
 
-# Common install locations, checked when `cloudflared` is not on PATH. The
-# Windows entry is the MSI default.
-_CANDIDATE_PATHS = (
-    r"C:\Program Files (x86)\cloudflared\cloudflared.exe",
-    r"C:\Program Files\cloudflared\cloudflared.exe",
-    "/usr/local/bin/cloudflared",
-    "/usr/bin/cloudflared",
-)
-
+DEFAULT_SUBDOMAIN = "jamesheston"
 _process = None
 _public_url = None
 _lock = threading.Lock()
 
 
-def find_cloudflared() -> str:
-    """Absolute path to cloudflared, or "" when it is not installed."""
-    from shutil import which
-
-    found = which("cloudflared")
-    if found:
-        return found
-    for path in _CANDIDATE_PATHS:
-        if os.path.isfile(path):
-            return path
-    return ""
+def subdomain() -> str:
+    return (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
 
 
 def public_url() -> str:
@@ -61,14 +47,19 @@ def public_url() -> str:
         return _public_url or ""
 
 
-def _publish(url: str) -> None:
-    """Record the current address in Supabase so the Pages site can find it.
+def _now() -> str:
+    import datetime
 
-    Goes in `bot_status` (id 'tunnel') rather than a new table, so nobody has
-    to run another migration.
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _publish(url: str) -> None:
+    """Record the address in Supabase so the Pages proxy can find it.
+
+    Uses the `bot_status` row with id 'tunnel', so no extra migration is needed.
     """
+    global _public_url
     with _lock:
-        global _public_url
         _public_url = url
 
     try:
@@ -80,20 +71,14 @@ def _publish(url: str) -> None:
             data={"id": "tunnel", "version": url, "updated_at": _now()},
             extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
         )
-        info(f"Dashboard tunnel published: {url}/admin")
+        info(f"Panel tunnel live: {url}  (reached at /dashboard)")
     except Exception as exc:
         warn(f"Could not publish the tunnel address: {type(exc).__name__}: {exc}")
 
 
-def _now() -> str:
-    import datetime
-
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
-
-
 def _unpublish() -> None:
+    global _public_url
     with _lock:
-        global _public_url
         _public_url = None
     try:
         import supabase_helper
@@ -109,46 +94,41 @@ def _unpublish() -> None:
 
 
 def _read_output(process: subprocess.Popen) -> None:
-    """Watch cloudflared's output for the address it was given."""
-    stream = process.stderr or process.stdout
+    """Watch the client's output for the address it was given."""
+    stream = process.stdout or process.stderr
     if stream is None:
         return
     for raw in iter(stream.readline, ""):
         line = raw.strip()
         if not line:
             continue
-        debug(f"cloudflared: {line}")
+        debug(f"localtunnel: {line}")
         match = _URL_RE.search(line)
         if match and not public_url():
-            _publish(match.group(0))
+            _publish(match.group(0).rstrip("/"))
 
 
 def start(port: int) -> bool:
-    """Start a quick tunnel to `http://localhost:<port>`.
+    """Start the tunnel to `http://localhost:<port>`.
 
-    Returns False when the tunnel could not be started. A named tunnel is used
-    when CLOUDFLARE_TUNNEL_TOKEN is set, otherwise a quick tunnel.
+    The address is known before the process starts — localtunnel uses whatever
+    subdomain you ask for — so it is published immediately rather than waiting
+    for output. The output reader is still there to catch a rejection (an
+    already-taken subdomain) and clear it again.
     """
     if os.getenv("DASHBOARD_TUNNEL", "1").strip().lower() in ("0", "false", "off", "no"):
-        info("Dashboard tunnel: disabled (DASHBOARD_TUNNEL=0)")
+        info("Panel tunnel: disabled (DASHBOARD_TUNNEL=0)")
         return False
 
-    binary = find_cloudflared()
-    if not binary:
-        warn("Dashboard tunnel: cloudflared not found, so the panel stays local only.")
-        return False
+    name = subdomain()
+    port_override = (os.getenv("LOCALTUNNEL_PORT") or "").strip()
+    target = int(port_override) if port_override.isdigit() else port
 
-    token = os.getenv("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
-    if token:
-        args = [binary, "tunnel", "--no-autoupdate", "run", "--token", token]
-        # A named tunnel has a fixed hostname; publish it if we are told what it is.
-        fixed = os.getenv("CLOUDFLARE_TUNNEL_URL", "").strip().rstrip("/")
-        if fixed:
-            _publish(fixed)
-        info("Dashboard tunnel: starting a named tunnel.")
-    else:
-        args = [binary, "tunnel", "--no-autoupdate", "--url", f"http://localhost:{port}"]
-        info("Dashboard tunnel: starting a quick tunnel.")
+    args = [
+        "npx", "--yes", "localtunnel",
+        "--port", str(target),
+        "--subdomain", name,
+    ]
 
     global _process
     try:
@@ -160,26 +140,30 @@ def start(port: int) -> bool:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            shell=(sys.platform == "win32"),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
         )
     except Exception as exc:
-        warn(f"Dashboard tunnel could not start: {type(exc).__name__}: {exc}")
+        warn(f"Panel tunnel could not start: {type(exc).__name__}: {exc}")
         return False
 
     threading.Thread(target=_read_output, args=(_process,), daemon=True).start()
     threading.Thread(target=_watch, args=(_process,), daemon=True).start()
 
-    # Give it a moment so the address is usually known before the bot is ready.
-    for _ in range(20):
-        if public_url() or _process.poll() is not None:
+    info(f"Panel tunnel: starting https://{name}.loca.lt -> localhost:{target}")
+    _publish(f"https://{name}.loca.lt")
+
+    # npx needs a moment on a cold cache; if it dies straight away, say so.
+    for _ in range(24):
+        if _process.poll() is not None:
             break
         time.sleep(0.25)
 
     if _process.poll() is not None:
-        warn("Dashboard tunnel exited immediately. Run cloudflared by hand to see why.")
+        warn("Panel tunnel exited immediately. Run `npx localtunnel --port "
+             f"{target}` by hand to see why.")
+        _unpublish()
         return False
-    if not public_url():
-        info("Dashboard tunnel: no address yet — it will be published when cloudflared offers one.")
     return True
 
 
@@ -188,7 +172,7 @@ def _watch(process: subprocess.Popen) -> None:
     _unpublish()
     code = process.returncode
     if code not in (0, None):
-        error(f"Dashboard tunnel stopped (exit {code}). The panel is local only until it restarts.")
+        error(f"Panel tunnel stopped (exit {code}). The panel is local only until it restarts.")
 
 
 def stop() -> None:
