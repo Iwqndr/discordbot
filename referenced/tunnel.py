@@ -1,3 +1,26 @@
+"""Public tunnel for the admin panel.
+
+`main.py` starts this alongside Flask, so the panel that only exists on this
+machine gets a public https:// address that `jamesheston.pages.dev/dashboard`
+can reach.
+
+Two providers, tried in this order unless `TUNNEL_PROVIDER` says otherwise:
+
+* **cloudflared** (preferred). A quick tunnel needs no account and holds a
+  connection far better in practice — localtunnel was observed going into a
+  "503 Tunnel Unavailable" state while its process stayed alive, which is
+  invisible until somebody tries to load the panel.
+* **localtunnel** (fallback). Used when cloudflared is not installed. Its
+  subdomain is stable, but the connection is less durable.
+
+Whichever runs, the public address is published to the Supabase `bot_status`
+row with id 'tunnel', and a watchdog polls that address and restarts the client
+when it stops answering — because a tunnel can die without its process exiting.
+
+Everything here is best-effort: if neither client is available the panel stays
+local and the bot is unaffected.
+"""
+
 import os
 import re
 import subprocess
@@ -7,33 +30,37 @@ import time
 
 from console import debug, error, info, warn
 
-# "your url is: https://jamesheston.loca.lt"
-_URL_RE = re.compile(r"https://([a-z0-9][a-z0-9-]*)\.loca\.lt", re.I)
+# Addresses each provider prints on startup.
+_CLOUDFLARED_RE = re.compile(r"https://[a-z0-9][a-z0-9-]*\.trycloudflare\.com", re.I)
+_LOCALTUNNEL_RE = re.compile(r"https://([a-z0-9][a-z0-9-]*)\.loca\.lt", re.I)
+
+CLOUDFLARED_PATHS = (
+    r"C:\Program Files (x86)\cloudflared\cloudflared.exe",
+    r"C:\Program Files\cloudflared\cloudflared.exe",
+    "/usr/local/bin/cloudflared",
+    "/usr/bin/cloudflared",
+)
 
 DEFAULT_SUBDOMAIN = "jamesheston"
+
+# Health watchdog. A dead tunnel is a visible outage, so two misses 20 seconds
+# apart is enough to act on; waiting longer just means minutes of "Bad gateway".
+HEALTH_INTERVAL = 20
+HEALTH_FAILURES = 2
+HEALTH_MAX_RESTARTS = 20
+
 _process = None
 _public_url = None
+_provider = None
 _lock = threading.Lock()
-# Last few lines localtunnel printed, kept so a start that dies instantly can
-# report why instead of just "it failed".
 _early_output: list = []
-
-# Health watchdog. A tunnel can go dead while its process stays alive, so the
-# public address is polled and the client restarted when it stops answering.
-HEALTH_INTERVAL = 60
-HEALTH_FAILURES = 3
-HEALTH_MAX_RESTARTS = 5
 _restarts = 0
 _health_thread = None
 
 
-def subdomain() -> str:
-    return (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
-
-
-def public_url() -> str:
-    with _lock:
-        return _public_url or ""
+# ---------------------------------------------------------------------------
+# shared helpers
+# ---------------------------------------------------------------------------
 
 
 def _now() -> str:
@@ -42,14 +69,40 @@ def _now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
-def _publish(url: str) -> None:
+def _safe(text: str) -> str:
+    """Strip characters the host console cannot encode.
+
+    cloudflared and localtunnel both print box-drawing and bullet characters.
+    On a cp1252 console those raise UnicodeEncodeError *inside* the logging
+    call, which kills the reader thread before it ever parses the URL — so the
+    tunnel looks like it silently failed.
+    """
+    try:
+        text.encode(sys.stdout.encoding or "utf-8")
+        return text
+    except (UnicodeEncodeError, LookupError):
+        return text.encode("ascii", "replace").decode("ascii")
+
+
+def public_url() -> str:
+    with _lock:
+        return _public_url or ""
+
+
+def provider() -> str:
+    with _lock:
+        return _provider or ""
+
+
+def _publish(url: str, kind: str) -> None:
     """Record the address in Supabase so the Pages proxy can find it.
 
     Uses the `bot_status` row with id 'tunnel', so no extra migration is needed.
     """
-    global _public_url
+    global _public_url, _provider
     with _lock:
         _public_url = url
+        _provider = kind
 
     try:
         import supabase_helper
@@ -60,12 +113,13 @@ def _publish(url: str) -> None:
             data={"id": "tunnel", "version": url, "updated_at": _now()},
             extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
         )
-        info(f"Panel tunnel live: {url}  (reached at /dashboard)")
+        info(f"Panel tunnel live ({kind}): {url}  (reached at /dashboard)")
     except Exception as exc:
         warn(f"Could not publish the tunnel address: {type(exc).__name__}: {exc}")
 
 
 def _unpublish() -> None:
+    """Clear the address so the site shows "panel offline" instead of 502s."""
     global _public_url
     with _lock:
         _public_url = None
@@ -82,23 +136,7 @@ def _unpublish() -> None:
         pass
 
 
-def _safe(text: str) -> str:
-    """Strip characters the host console cannot encode.
-
-    localtunnel prints a `●` in its ready banner. On a Windows console using
-    cp1252 that raises UnicodeEncodeError *inside* the logging call, which
-    aborts the reader thread before it ever parses the URL — so the tunnel looks
-    like it silently failed. Anything unprintable is replaced here instead.
-    """
-    try:
-        text.encode(sys.stdout.encoding or "utf-8")
-        return text
-    except (UnicodeEncodeError, LookupError):
-        return text.encode("ascii", "replace").decode("ascii")
-
-
-def _read_output(process: subprocess.Popen) -> None:
-    """Watch the client's output for the address it was given."""
+def _read_output(process: subprocess.Popen, pattern: re.Pattern, kind: str) -> None:
     stream = process.stdout or process.stderr
     if stream is None:
         return
@@ -106,55 +144,20 @@ def _read_output(process: subprocess.Popen) -> None:
         line = _safe(raw.strip())
         if not line:
             continue
-        debug(f"localtunnel: {line}")
+        debug(f"{kind}: {line}")
         with _lock:
             _early_output.append(line)
             del _early_output[:-8]
-        match = _URL_RE.search(line)
+        match = pattern.search(line)
         if match and not public_url():
-            _publish(match.group(0).rstrip("/"))
+            _publish(match.group(0).rstrip("/"), kind)
 
 
-def _npx_command() -> list:
-    """`npx` as an argv list that works on Windows.
-
-    On Windows `npx` is a `.cmd` shim, so `subprocess` needs `shell=True` to
-    find it — and with `shell=True` you cannot reliably redirect its output,
-    which is how the startup error gets swallowed. Resolving the shim and
-    calling it directly avoids both problems.
-    """
-    from shutil import which
-
-    for name in ("npx.cmd", "npx.exe", "npx"):
-        found = which(name)
-        if found:
-            return [found]
-    return ["npx"]
-
-
-def start(port: int) -> bool:
-    """Start the tunnel to `http://localhost:<port>`.
-
-    The address is known before the process starts — localtunnel uses whatever
-    subdomain you ask for — so it is published immediately rather than waiting
-    for output. The output reader is still there to catch a rejection (an
-    already-taken subdomain) and clear it again.
-    """
-    if os.getenv("DASHBOARD_TUNNEL", "1").strip().lower() in ("0", "false", "off", "no"):
-        info("Panel tunnel: disabled (DASHBOARD_TUNNEL=0)")
-        return False
-
-    name = subdomain()
-    port_override = (os.getenv("LOCALTUNNEL_PORT") or "").strip()
-    target = int(port_override) if port_override.isdigit() else port
-
-    args = _npx_command() + [
-        "--yes", "localtunnel",
-        "--port", str(target),
-        "--subdomain", name,
-    ]
-
-    global _process
+def _spawn(args: list, kind: str, pattern: re.Pattern):
+    """Start a client, watching its output. Returns the Popen or None."""
+    global _process, _early_output
+    with _lock:
+        _early_output = []
     try:
         _process = subprocess.Popen(
             args,
@@ -168,42 +171,159 @@ def start(port: int) -> bool:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
         )
     except Exception as exc:
-        warn(f"Panel tunnel could not start: {type(exc).__name__}: {exc}")
-        return False
+        warn(f"Panel tunnel could not start ({kind}): {type(exc).__name__}: {exc}")
+        return None
 
-    threading.Thread(target=_read_output, args=(_process,), daemon=True).start()
+    threading.Thread(target=_read_output, args=(_process, pattern, kind), daemon=True).start()
     threading.Thread(target=_watch, args=(_process,), daemon=True).start()
+    return _process
 
-    info(f"Panel tunnel: starting https://{name}.loca.lt -> localhost:{target}")
-    _publish(f"https://{name}.loca.lt")
 
-    # npx needs a moment on a cold cache; if it dies straight away the reason is
-    # in its output, so keep the first few lines to print.
-    early = []
-    deadline = time.time() + 8
-    while time.time() < deadline:
-        if _process.poll() is not None:
-            break
-        time.sleep(0.25)
-        with _lock:
-            if _early_output and not early:
-                early = list(_early_output)
+# ---------------------------------------------------------------------------
+# providers
+# ---------------------------------------------------------------------------
 
-    if _process.poll() is not None:
-        warn("Panel tunnel exited immediately. Output:")
-        for line in (early or _early_output)[:6]:
-            warn(f"    {line}")
-        warn("Run `npx localtunnel --port "
-             f"{target} --subdomain {name}` by hand to reproduce it.")
-        _unpublish()
+
+def find_cloudflared() -> str:
+    from shutil import which
+
+    found = which("cloudflared")
+    if found:
+        return found
+    for path in CLOUDFLARED_PATHS:
+        if os.path.isfile(path):
+            return path
+    return ""
+
+
+def _npx_command() -> list:
+    """`npx` as an argv list that works on Windows.
+
+    On Windows `npx` is a `.cmd` shim, so `subprocess` needs `shell=True` to
+    find it — and with `shell=True` you cannot reliably capture its output,
+    which is how startup errors get swallowed.
+    """
+    from shutil import which
+
+    for name in ("npx.cmd", "npx.exe", "npx"):
+        found = which(name)
+        if found:
+            return [found]
+    return ["npx"]
+
+
+def _start_cloudflared(port: int) -> bool:
+    binary = find_cloudflared()
+    if not binary:
         return False
 
-    global _health_thread
-    if _health_thread is None or not _health_thread.is_alive():
-        _health_thread = threading.Thread(target=_health_loop, args=(target,), daemon=True)
-        _health_thread.start()
+    token = (os.getenv("CLOUDFLARE_TUNNEL_TOKEN") or "").strip()
+    if token:
+        args = [binary, "tunnel", "--no-autoupdate", "run", "--token", token]
+        fixed = (os.getenv("CLOUDFLARE_TUNNEL_URL") or "").strip().rstrip("/")
+        if fixed:
+            _publish(fixed, "cloudflared")
+    else:
+        args = [binary, "tunnel", "--no-autoupdate", "--url", f"http://localhost:{port}"]
 
+    if _spawn(args, "cloudflared", _CLOUDFLARED_RE) is None:
+        return False
     return True
+
+
+def _start_localtunnel(port: int) -> bool:
+    name = (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
+    port_override = (os.getenv("LOCALTUNNEL_PORT") or "").strip()
+    target = int(port_override) if port_override.isdigit() else port
+
+    args = _npx_command() + ["--yes", "localtunnel", "--port", str(target), "--subdomain", name]
+    if _spawn(args, "localtunnel", _LOCALTUNNEL_RE) is None:
+        return False
+
+    # localtunnel's address is known up front, but it is only published after a
+    # health check proves the connection actually carries traffic — otherwise a
+    # taken subdomain leaves a dead address in Supabase.
+    info(f"Panel tunnel: starting https://{name}.loca.lt -> localhost:{target}")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# lifecycle
+# ---------------------------------------------------------------------------
+
+
+def _wait_for_address(process, seconds: float) -> bool:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if process.poll() is not None:
+            return False
+        if public_url():
+            return True
+        time.sleep(0.25)
+    return process.poll() is None
+
+
+def start(port: int) -> bool:
+    """Start the preferred tunnel to `http://localhost:<port>`."""
+    if os.getenv("DASHBOARD_TUNNEL", "1").strip().lower() in ("0", "false", "off", "no"):
+        info("Panel tunnel: disabled (DASHBOARD_TUNNEL=0)")
+        return False
+
+    wanted = (os.getenv("TUNNEL_PROVIDER") or "").strip().lower()
+    order = [wanted] if wanted in ("cloudflared", "localtunnel") else ["cloudflared", "localtunnel"]
+    if wanted == "localtunnel":
+        order = ["localtunnel"]
+    elif wanted == "cloudflared":
+        order = ["cloudflared"]
+
+    for kind in order:
+        if kind == "cloudflared":
+            if not find_cloudflared():
+                warn("Panel tunnel: cloudflared not found, trying localtunnel instead.")
+                continue
+            info("Panel tunnel: starting cloudflared (quick tunnel).")
+            ok = _start_cloudflared(port)
+            patience = 25.0
+            # A named tunnel has a fixed public address, so there is nothing to
+            # wait for on stdout.
+            if (os.getenv("CLOUDFLARE_TUNNEL_TOKEN") or "").strip():
+                patience = 6.0
+        else:
+            ok = _start_localtunnel(port)
+            patience = 20.0
+
+        if not ok:
+            continue
+
+        if not _wait_for_address(_process, patience):
+            warn(f"Panel tunnel ({kind}) produced no address. Output:")
+            for line in list(_early_output)[:6]:
+                warn(f"    {line}")
+            stop()
+            continue
+
+        if not public_url():
+            # localtunnel: publish only once it is proven reachable.
+            name = (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
+            candidate = f"https://{name}.loca.lt"
+            if _wait_healthy(candidate):
+                _publish(candidate, "localtunnel")
+            else:
+                warn("Panel tunnel (localtunnel) is not reachable yet; not publishing its address.")
+                stop()
+                continue
+        elif kind == "cloudflared" and not _wait_healthy(public_url()):
+            warn("Panel tunnel (cloudflared) came up but is not answering yet; "
+                 "publishing it anyway so the watchdog can recover it.")
+
+        global _health_thread
+        if _health_thread is None or not _health_thread.is_alive():
+            _health_thread = threading.Thread(target=_health_loop, args=(port,), daemon=True)
+            _health_thread.start()
+        return True
+
+    warn("Panel tunnel could not be established. The panel is local only.")
+    return False
 
 
 def _watch(process: subprocess.Popen) -> None:
@@ -214,13 +334,13 @@ def _watch(process: subprocess.Popen) -> None:
         error(f"Panel tunnel stopped (exit {code}). The panel is local only until it restarts.")
 
 
-def _healthy(url: str, timeout: int = 12) -> bool:
-    """Can loca.lt actually reach this tunnel right now?
+def _healthy(url: str, timeout: int = 15) -> bool:
+    """Can the public address actually reach this tunnel right now?
 
     A tunnel can die without its process exiting: the connection drops, the
-    client stays up, and loca.lt starts answering "503 Tunnel Unavailable"
-    while `start()` still believes everything is fine. The only reliable check
-    is to ask the public address.
+    client stays up, and the provider starts answering "Unavailable" while
+    `start()` still believes everything is fine. The only reliable check is to
+    ask the public address.
     """
     import urllib.request
 
@@ -235,43 +355,68 @@ def _healthy(url: str, timeout: int = 12) -> bool:
         return False
 
 
-def _health_loop(port: int) -> None:
-    """Restart the tunnel when it stops carrying traffic.
+def _wait_healthy(url: str, attempts: int = 5, gap: float = 4.0) -> bool:
+    """Give a freshly started tunnel a few moments to become reachable.
 
-    Three consecutive failures before acting: one miss is usually a blip, and
-    restarting on it would thrash the subdomain.
+    A quick tunnel prints its address before the edge finishes wiring it up, so
+    a single immediate check says "unhealthy" for a tunnel that is perfectly
+    fine. Retrying briefly avoids restarting something that just came up.
     """
+    for index in range(attempts):
+        if _healthy(url):
+            return True
+        if index < attempts - 1:
+            time.sleep(gap)
+    return False
+
+
+def _health_loop(port: int) -> None:
+    """Restart the tunnel when it stops carrying traffic."""
     global _restarts
     misses = 0
+    restarts = 0
+    healthy_runs = 0
 
     while True:
         time.sleep(HEALTH_INTERVAL)
         url = public_url()
-        if not url:
-            continue
-        if _healthy(url):
+
+        if url and _healthy(url):
+            healthy_runs += 1
             misses = 0
+            # Only a genuinely stable spell clears the restart history, so a
+            # tunnel that flaps forever cannot reset its own counter and loop.
+            if healthy_runs >= 15:
+                restarts = 0
             continue
 
+        healthy_runs = 0
         misses += 1
-        warn(f"Panel tunnel health check failed ({misses}/{HEALTH_FAILURES}).")
+        if url:
+            warn(f"Panel tunnel health check failed ({misses}/{HEALTH_FAILURES}).")
         if misses < HEALTH_FAILURES:
             continue
 
         misses = 0
-        _restarts += 1
-        if _restarts > HEALTH_MAX_RESTARTS:
-            error("Panel tunnel keeps failing to stay up, so automatic restarts have stopped. "
-                  f"Run `npx localtunnel --port {port}` by hand to see the error. "
-                  "The panel is local only until then.")
+        restarts += 1
+        if restarts > HEALTH_MAX_RESTARTS:
+            error(f"Panel tunnel keeps failing, so automatic restarts have stopped after "
+                  f"{HEALTH_MAX_RESTARTS} attempts. The panel is local only. "
+                  f"Run the tunnel by hand to see the underlying error.")
             _unpublish()
             return
 
-        warn(f"Panel tunnel is not carrying traffic — restarting it "
-             f"({_restarts}/{HEALTH_MAX_RESTARTS}).")
+        # Clear the address before restarting so the site shows "panel offline"
+        # rather than forwarding to a dead host for the duration.
+        _unpublish()
         stop()
+        warn(f"Panel tunnel is not carrying traffic — restarting "
+             f"({restarts}/{HEALTH_MAX_RESTARTS}).")
+
         if not start(port):
-            return
+            backoff = min(300, 5 * (2 ** min(restarts, 6)))
+            warn(f"Panel tunnel restart failed; waiting {backoff}s before the next attempt.")
+            time.sleep(backoff)
 
 
 def stop() -> None:
