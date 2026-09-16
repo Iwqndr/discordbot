@@ -95,9 +95,10 @@ function page({ url, seenAt, stale }) {
     offline. If the page does not load, start <code>main.py</code> and try again.</div>` : ""}
 
   <div class="note">
-    <p>It runs on beans and water, so if theres any errors, contact @fourhrt</p>
-    <p>It may show a one-time "Tunnel website ahead" notice. That is the tunnel
-       service asking for a click, not a problem with your account.</p>
+    <p>It runs on the host machine, so it only answers while that machine is on.</p>
+    <p>You may see a one-time "Tunnel website ahead" notice first. That is the
+       tunnel service asking for a click, not a problem with your account — once
+       you have clicked through it, it stops appearing.</p>
   </div>
 </div></body></html>`;
 
@@ -135,54 +136,5 @@ export async function onRequestGet({ env }) {
   }
 
   const age = info.seenAt ? (Date.now() - new Date(info.seenAt).getTime()) / 1000 : Infinity;
-  if (age > 600) return page({ ...info, stale: true });
-
-  return renderPanel(info.url) ?? page({ ...info, stale: false });
-}
-
-/**
- * Fetch the panel with the header localtunnel wants, and hand its HTML straight
- * to the browser with a `<base>` pointing at the tunnel.
- *
- * Two things fall out of that: the "Tunnel website ahead" notice never appears,
- * because the request carries `Bypass-Tunnel-Reminder`; and every asset, fetch
- * and link inside the panel resolves against the tunnel origin, so the panel
- * behaves exactly as it does locally. Only this one response is touched — no
- * route is proxied, which is what caused the earlier cookie and redirect mess.
- *
- * Returns null when the panel cannot be fetched, so the caller can fall back to
- * the plain link page.
- */
-async function renderPanel(tunnelUrl) {
-  let upstream;
-  try {
-    upstream = await fetch(`${tunnelUrl}/admin`, {
-      headers: {
-        "Bypass-Tunnel-Reminder": "true",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml",
-      },
-      redirect: "follow",
-    });
-  } catch (err) {
-    console.error(`[dashboard] panel fetch failed for ${tunnelUrl}: ${err}`);
-    return null;
-  }
-
-  const type = upstream.headers.get("Content-Type") || "";
-  if (!upstream.ok || !type.includes("text/html")) {
-    console.error(`[dashboard] panel returned ${upstream.status} (${type})`);
-    return null;
-  }
-
-  let html = await upstream.text();
-  const base = `<base href="${tunnelUrl}/">`;
-  html = /<head[^>]*>/i.test(html)
-    ? html.replace(/<head[^>]*>/i, (m) => `${m}${base}`)
-    : `${base}${html}`;
-
-  return new Response(html, {
-    status: 200,
-    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-  });
+  return page({ ...info, stale: age > 600 });
 }
