@@ -85,3 +85,6 @@ logging/github_settings.json
 #
 # `pages/` also holds the package, plus schema.sql and the README.
 .wrangler/
+
+# Local Pages dev secrets (wrangler). Never committed.
+.dev.vars

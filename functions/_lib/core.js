@@ -191,6 +191,45 @@ export async function currentUser(request, env) {
 }
 
 // ---------------------------------------------------------------------------
+// Owner key
+// ---------------------------------------------------------------------------
+
+const OWNER_COOKIE = "wc_owner";
+
+/**
+ * True when this browser has already proven it knows the owner key.
+ *
+ * The key itself never rides in the cookie — only a signed marker — so a stolen
+ * cookie cannot be replayed as the key elsewhere.
+ */
+export async function ownerUnlocked(request, env) {
+  if (!env.PANEL_OWNER_KEY) return false;
+  const marker = await unsign(env, readCookie(request, OWNER_COOKIE));
+  return Boolean(marker && marker.owner === true);
+}
+
+export async function ownerCookie(env) {
+  const marker = await sign(env, { owner: true, at: Date.now() });
+  return marker ? cookieHeader(OWNER_COOKIE, marker, MAX_AGE) : null;
+}
+
+export function clearOwnerCookie() {
+  return cookieHeader(OWNER_COOKIE, "", 0);
+}
+
+/** Constant-time-ish comparison, so a wrong key does not leak its length. */
+export function keyMatches(env, supplied) {
+  const expected = String(env.PANEL_OWNER_KEY ?? "");
+  const given = String(supplied ?? "");
+  if (!expected || !given || expected.length !== given.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i += 1) {
+    diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+// ---------------------------------------------------------------------------
 // Discord REST
 // ---------------------------------------------------------------------------
 

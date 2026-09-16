@@ -26,23 +26,65 @@ function allowedRoleIds(env) {
     .filter(Boolean);
 }
 
-export async function panelGate(request, env) {
+export async function panelGate(request, env, { wantsHtml = false } = {}) {
+  const ownerConfigured = Boolean(env.PANEL_OWNER_KEY);
+  const roleIds = allowedRoleIds(env);
+
+  // Neither gate configured: nobody gets in. A missing setting should close the
+  // door rather than quietly let every signed-in member through.
+  if (!ownerConfigured && !roleIds.length) return { error: lockedOut(wantsHtml) };
+
+  if (ownerConfigured) {
+    if (await ownerUnlocked(request, env)) return { owner: true };
+    // Role access is still honoured when both are configured.
+    if (!roleIds.length) return { error: lockedOut(wantsHtml) };
+  }
+
   const uid = await currentUser(request, env);
   if (!uid) return { error: fail("Sign in with Discord first.", 401) };
 
-  const roleIds = allowedRoleIds(env);
-  if (!roleIds.length) return { uid };
-
-  const member = await supa(
-    env,
-    `members?user_id=eq.${encodeURIComponent(uid)}&select=roles&limit=1`
-  );
-  const roles = Array.isArray(member.rows) && member.rows[0]?.roles ? member.rows[0].roles : [];
-  const mine = new Set(roles.map((r) => String(r?.id ?? "")));
-  if (!roleIds.some((id) => mine.has(id))) {
-    return { error: fail("Permissions are required to access this panel.", 403) };
+  if (roleIds.length) {
+    const member = await supa(
+      env,
+      `members?user_id=eq.${encodeURIComponent(uid)}&select=roles&limit=1`
+    );
+    const roles = Array.isArray(member.rows) && member.rows[0]?.roles ? member.rows[0].roles : [];
+    const mine = new Set(roles.map((r) => String(r?.id ?? "")));
+    if (!roleIds.some((id) => mine.has(id))) {
+      return { error: fail("Permissions are required to access this panel.", 403) };
+    }
   }
+
   return { uid };
+}
+
+/** A page pointing at the key box, or a plain 403 for a programmatic caller. */
+function lockedOut(wantsHtml) {
+  if (!wantsHtml) return fail("Owner key required.", 403);
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Not available</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center;
+         font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;
+         background:#f5f3ef; color:#2b2723; }
+  @media (prefers-color-scheme: dark) { body { background:#1a1815; color:#efe9e0; } }
+  .card { max-width:400px; padding:30px 28px; border-radius:18px; text-align:center;
+          background:rgba(255,255,255,.75); border:1px solid rgba(0,0,0,.07); }
+  @media (prefers-color-scheme: dark) { .card { background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.09); } }
+  h1 { font-size:18px; margin:0 0 8px; }
+  p { margin:0; opacity:.8; }
+</style></head>
+<body><div class="card">
+  <h1>Not available here</h1>
+  <p>Open <a href="/dashboard">/dashboard</a> instead.</p>
+</div></body></html>`;
+  return new Response(html, {
+    status: 403,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+  });
 }
 
 export async function tunnelBase(env) {
@@ -52,17 +94,10 @@ export async function tunnelBase(env) {
   return base || null;
 }
 
-/**
- * Forward `request` to the tunnel.
- *
- * `stripPrefix` is removed from the incoming path first: a request to
- * `/panel/admin` becomes `<tunnel>/admin`. Pass "" when the path already
- * matches the panel's own (for `/api/...`).
- */
 export async function proxyToPanel(request, env, { stripPrefix, base = null }) {
   const tunnel = base || (await tunnelBase(env));
   if (!tunnel) {
-    return fail("The admin panel is offline. Start main.py on the host machine and try again.", 503);
+    return fail("hi", 503);
   }
 
   const inbound = new URL(request.url);
@@ -109,6 +144,20 @@ export async function proxyToPanel(request, env, { stripPrefix, base = null }) {
   out.delete("content-length");
   out.set("Cache-Control", "no-store");
 
+  // The panel's own redirects are root-absolute (`/admin`, `/auth/discord`).
+  // Sent as-is the browser leaves the proxy and lands on a 404 — which is
+  // exactly what "/admin?login=ok could not be found" was. Keeping them inside
+  // /panel holds the browser on a path this Worker serves.
+  const location = out.get("Location");
+  if (
+    location &&
+    location.startsWith("/") &&
+    !location.startsWith("//") &&
+    !location.startsWith("/panel")
+  ) {
+    out.set("Location", `/panel${location}`);
+  }
+
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }
 
@@ -135,7 +184,7 @@ function offlineResponse(status = 503) {
 </style></head>
 <body><div class="card">
   <h1>The admin panel is offline</h1>
-  <p>The panel runs on the host machine, and the tunnel to it is not answering.</p>
+  <p>The panel runs on potatoes and chicken, so the tunnel to it is not answering.</p>
   <p>Start <code>main.py</code> on that machine and reload this page.</p>
 </div></body></html>`;
 
