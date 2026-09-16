@@ -1,4 +1,4 @@
-﻿.env
+.env
 .env.*
 !.env.example
 
@@ -30,7 +30,10 @@ yarn-error.log*
 deleted_logs/
 message_logs/
 scratch/
-wispcord/
+# `/wispcord/` with the leading slash: the rule used to be a bare `wispcord/`,
+# which matched at ANY depth and silently excluded referenced/wispcord — the
+# member bot's entire source. There is no top-level wispcord folder any more.
+/wispcord/
 
 automod_config.json
 dash_permissions.json
