@@ -133,17 +133,23 @@ async def staff_only_gate(ctx: commands.Context):
 
 
 async def _build_member_row(member: discord.Member) -> dict:
+    # Every role the member actually wears, highest first, so the site can show
+    # what somebody really has. The tier is only decorative: known staff roles
+    # keep their configured rank, anything else sorts below them, and @everyone
+    # is dropped because it is not a real badge.
     member_roles = []
-    for r in member.roles:
-        if r.name in ROLES_BY_TIER:
-            member_roles.append({
-                "name": r.name,
-                "color": str(r.color),
-                "tier": ROLES_BY_TIER[r.name],
-            })
+    for r in sorted(member.roles, key=lambda role: role.position, reverse=True):
+        if r.is_default():
+            continue
+        member_roles.append({
+            "id": str(r.id),
+            "name": r.name,
+            "color": str(r.color),
+            "tier": ROLES_BY_TIER.get(r.name, 10),
+        })
 
     if not member_roles:
-        member_roles.append({"name": "Members", "color": "#96908a", "tier": 0})
+        member_roles.append({"id": "", "name": "Members", "color": "#96908a", "tier": 0})
 
     banner_url = ""
     try:

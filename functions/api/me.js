@@ -30,13 +30,16 @@ async function handleGet({ request, env }) {
     return ok({ oauth_ready: oauthReady, logged_in: false, user: null, open_count: 0, staff_title: null });
   }
 
-  const [memberRes, titleRes, openCount] = await Promise.all([
+  const [memberRes, titleRes, openCount, economyRes] = await Promise.all([
     supa(
       env,
       `members?user_id=eq.${encodeURIComponent(uid)}&select=user_id,username,display_name,avatar_url,banner_url,bio,roles&limit=1`
     ),
     supa(env, "staff_titles?select=*"),
     openTicketCount(env, uid),
+    // The member bot mirrors its JSON economy here once a minute, so this is a
+    // read-only copy rather than the source of truth.
+    supa(env, `economy?user_id=eq.${encodeURIComponent(uid)}&select=*&limit=1`),
   ]);
 
   const row = Array.isArray(memberRes.rows) ? memberRes.rows[0] : null;
@@ -53,12 +56,27 @@ async function handleGet({ request, env }) {
 
   const staffTitle = titleForRoles(titleRes.rows || [], row?.roles || []);
 
+  const economyRow = Array.isArray(economyRes.rows) ? economyRes.rows[0] : null;
+  const economy = economyRow
+    ? {
+        balance: Number(economyRow.balance || 0),
+        bank: Number(economyRow.bank || 0),
+        xp: Number(economyRow.xp || 0),
+        level: Number(economyRow.level || 1),
+        wins: Number(economyRow.wins || 0),
+        losses: Number(economyRow.losses || 0),
+        streak: Number(economyRow.streak || 0),
+        total: Number(economyRow.balance || 0) + Number(economyRow.bank || 0),
+      }
+    : null;
+
   return ok({
     oauth_ready: oauthReady,
     logged_in: true,
     user: { ...user, staff_title: staffTitle },
     open_count: openCount,
     staff_title: staffTitle,
+    economy,
   });
 }
 
