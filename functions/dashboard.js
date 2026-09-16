@@ -1,144 +1,139 @@
-// GET  /dashboard — the gate, then on to the admin panel
-// POST /dashboard — accept the key and set the owner cookie
+// Panel link page for /dashboard.
 //
-// The panel runs on the operator's machine and is reached through a tunnel.
-// Before anyone gets there they must prove they hold the owner key, kept as a
-// Pages secret `PANEL_OWNER_KEY` that never leaves the Worker.
+// This deliberately does NOT proxy the admin panel. An earlier version did, and
+// it fought the panel the whole way: its session cookies landed on the wrong
+// domain, its redirects to `/admin` escaped the proxy, and its `/api/*` calls
+// needed their own passthrough. Opening the panel at its own address removes
+// every one of those problems, because the panel is then simply on the host it
+// thinks it is on.
 //
-// The form is deliberately understated: a small box tucked into the bottom-left
-// corner that only appears when the pointer comes near it, saying nothing about
-// what is behind it.
-//
-// If `PANEL_OWNER_KEY` is unset, `PANEL_ROLE_IDS` decides access instead. With
-// neither set, nobody gets in — missing configuration should close the door,
-// not open it.
+// So this page does one job: it reads the tunnel address the host machine
+// published and offers it as a link.
 
-import { currentUser, keyMatches, ownerCookie, ownerUnlocked } from "./_lib/core.js";
+import { fail, supa } from "./_lib/core.js";
 
-const ADMIN_TARGET = "/panel/admin";
-
-function redirect(request, path, extraHeaders = {}) {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: new URL(path, request.url).toString(),
-      "Cache-Control": "no-store",
-      ...extraHeaders,
-    },
-  });
+/** The address `main.py` last published, or null. */
+export async function tunnelInfo(env) {
+  const res = await supa(env, "bot_status?id=eq.tunnel&select=version,updated_at&limit=1");
+  const row = Array.isArray(res.rows) ? res.rows[0] : null;
+  const url = String(row?.version ?? "").trim().replace(/\/+$/, "");
+  if (!url) return null;
+  return { url, seenAt: row?.updated_at || null };
 }
 
-/** The hidden key box. Served instead of a redirect until the key is proven. */
-function keyPage({ wrong = false } = {}) {
+function page({ url, seenAt, stale }) {
+  const host = (() => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return url;
+    }
+  })();
+
+  let lastSeen = "";
+  if (seenAt) {
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(seenAt).getTime()) / 1000));
+    lastSeen = seconds < 90 ? `${seconds} seconds ago` : `${Math.round(seconds / 60)} minutes ago`;
+  }
+
   const html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Loading…</title>
+<title>Admin panel</title>
 <style>
   :root { color-scheme: light dark; }
-  body { margin:0; min-height:100vh; background:#f5f3ef; color:#2b2723;
-         font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center;
+         font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;
+         background:#f5f3ef; color:#2b2723; }
   @media (prefers-color-scheme: dark) { body { background:#1a1815; color:#efe9e0; } }
 
-  /* The whole control stays hidden until the pointer comes near, but a faint
-     hint stays on screen so the page never looks like it failed to load. */
-  .keyzone { position:fixed; left:0; bottom:0; width:240px; height:100px; z-index:50; }
-  .hint    { position:absolute; left:16px; bottom:16px; font-size:12px;
-             color:rgba(0,0,0,.28); letter-spacing:.02em; user-select:none;
-             transition:opacity .16s ease; }
-  @media (prefers-color-scheme: dark) { .hint { color:rgba(255,255,255,.3); } }
-  .keyzone:hover .hint, .keyzone:focus-within .hint { opacity:0; }
-
-  .keybox  { position:absolute; left:14px; bottom:14px; display:flex; gap:6px;
-             opacity:0; transform:translateY(6px); pointer-events:none;
-             transition:opacity .18s ease, transform .18s ease; }
-  .keyzone:hover .keybox, .keyzone:focus-within .keybox {
-             opacity:1; transform:none; pointer-events:auto; }
-
-  input { width:150px; padding:7px 10px; border-radius:9px; font:inherit; font-size:13px;
-          border:1px solid rgba(0,0,0,.16); background:rgba(255,255,255,.9); color:inherit; }
+  .card { max-width:440px; padding:34px 32px; border-radius:20px; text-align:center;
+          background:rgba(255,255,255,.78); border:1px solid rgba(0,0,0,.07);
+          box-shadow:0 14px 44px rgba(0,0,0,.09); }
   @media (prefers-color-scheme: dark) {
-    input { border-color:rgba(255,255,255,.18); background:rgba(255,255,255,.07); }
-  }
-  input:focus { outline:none; border-color:#6ea8c9; box-shadow:0 0 0 3px rgba(110,168,201,.22); }
-
-  button { padding:7px 12px; border-radius:9px; font:inherit; font-size:13px; font-weight:600;
-           border:1px solid rgba(0,0,0,.14); background:rgba(255,255,255,.9); color:inherit;
-           cursor:pointer; }
-  button:hover { border-color:#6ea8c9; }
-  @media (prefers-color-scheme: dark) {
-    button { border-color:rgba(255,255,255,.18); background:rgba(255,255,255,.07); }
+    .card { background:rgba(255,255,255,.045); border-color:rgba(255,255,255,.09); }
   }
 
-  .wrong { position:absolute; left:16px; bottom:54px; font-size:12px; color:#c25b5b;
-           opacity:${wrong ? 1 : 0}; transition:opacity .18s ease; }
+  h1 { font-size:20px; margin:0 0 10px; letter-spacing:-.01em; }
+  p { margin:0 0 10px; opacity:.82; }
+  .muted { font-size:13px; opacity:.6; }
+
+  a.open { display:inline-flex; align-items:center; gap:9px; margin:20px 0 6px;
+           padding:13px 24px; border-radius:12px; text-decoration:none; font-weight:650;
+           color:#12232b; background:#9fd0e6; border:1px solid rgba(0,0,0,.08);
+           transition:transform .16s ease, box-shadow .16s ease, filter .16s ease; }
+  a.open:hover { transform:translateY(-1px); filter:brightness(1.04);
+                 box-shadow:0 10px 24px rgba(0,0,0,.14); }
+  a.open:active { transform:translateY(0); }
+  a.open svg { width:17px; height:17px; }
+
+  .note { margin-top:18px; padding-top:16px; border-top:1px solid rgba(0,0,0,.07);
+          font-size:12.5px; opacity:.6; text-align:left; }
+  @media (prefers-color-scheme: dark) { .note { border-top-color:rgba(255,255,255,.1); } }
+  .note p { margin:0 0 6px; }
+  code { background:rgba(0,0,0,.06); padding:1px 6px; border-radius:5px; font-size:12px; }
+  @media (prefers-color-scheme: dark) { code { background:rgba(255,255,255,.09); } }
+
+  .stale { margin-top:14px; font-size:12.5px; color:#b4703a; }
 </style></head>
-<body>
-  <div class="keyzone">
-    <div class="wrong">That key was not right.</div>
-    <div class="hint">Enter Key</div>
-    <form class="keybox" method="POST" action="/dashboard" autocomplete="off">
-      <input type="password" name="key" placeholder="Enter Key" aria-label="Enter Key"${wrong ? " autofocus" : ""}>
-      <button type="submit">Go</button>
-    </form>
+<body><div class="card">
+  <h1>Admin panel</h1>
+  <p>If you are trying to reach the admin page, open it with the button below.</p>
+
+  <a class="open" href="${url}/admin" target="_blank" rel="noopener noreferrer">
+    Open the admin panel
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+      <polyline points="15 3 21 3 21 9"></polyline>
+      <line x1="10" y1="14" x2="21" y2="3"></line>
+    </svg>
+  </a>
+  <div class="muted">Opens in a new tab, at <code>${host}</code></div>
+
+  ${stale ? `<div class="stale">This address was last seen ${lastSeen}, so the host machine may be
+    offline. If the page does not load, start <code>main.py</code> and try again.</div>` : ""}
+
+  <div class="note">
+    <p>It runs on the host machine, so it only answers while that machine is on.</p>
+    <p>It may show a one-time "Tunnel website ahead" notice. That is the tunnel
+       service asking for a click, not a problem with your account.</p>
   </div>
-</body></html>`;
+</div></body></html>`;
 
   return new Response(html, {
-    status: wrong ? 401 : 200,
+    status: 200,
     headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
   });
 }
 
-export async function onRequestGet({ request, env }) {
-  const roleIds = String(env.PANEL_ROLE_IDS ?? "")
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean);
-
-  if (env.PANEL_OWNER_KEY) {
-    if (!(await ownerUnlocked(request, env))) return keyPage();
-    return redirect(request, ADMIN_TARGET);
-  }
-
-  if (roleIds.length) {
-    // Role-based access: the proxy enforces it, so just send them along.
-    const uid = await currentUser(request, env);
-    if (!uid) return keyPage();
-    return redirect(request, ADMIN_TARGET);
-  }
-
-  return new Response(
-    `<!DOCTYPE html><html><body style="font:15px system-ui;padding:40px">
-     <h1 style="font-size:18px">The panel is not configured</h1>
-     <p>Set <code>PANEL_OWNER_KEY</code> or <code>PANEL_ROLE_IDS</code> in this Pages project.</p>
-     </body></html>`,
-    {
-      status: 503,
-      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-    }
-  );
-}
-
-export async function onRequestPost({ request, env }) {
-  if (!env.PANEL_OWNER_KEY) return onRequestGet({ request, env });
-
-  let supplied = "";
+export async function onRequestGet({ env }) {
+  let info = null;
   try {
-    const form = await request.formData();
-    supplied = String(form.get("key") ?? "");
-  } catch {
-    // Fall through to the wrong-key branch.
+    info = await tunnelInfo(env);
+  } catch (err) {
+    console.error(`[dashboard] tunnel lookup failed: ${err}`);
   }
 
-  if (!keyMatches(env, supplied)) {
-    return keyPage({ wrong: true });
+  if (!info) {
+    return new Response(
+      `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+       <meta name="viewport" content="width=device-width,initial-scale=1">
+       <title>Admin panel</title></head>
+       <body style="margin:0;min-height:100vh;display:grid;place-items:center;
+                    font:15px/1.6 system-ui,sans-serif;background:#f5f3ef;color:#2b2723">
+       <div style="max-width:400px;padding:32px;text-align:center">
+         <h1 style="font-size:19px;margin:0 0 10px">The admin panel is offline</h1>
+         <p style="opacity:.8;margin:0">The host machine has not published an address.
+            Start <code>main.py</code> and reload this page.</p>
+       </div></body></html>`,
+      {
+        status: 503,
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+      }
+    );
   }
 
-  const cookie = await ownerCookie(env);
-  if (!cookie) {
-    console.error("[dashboard] owner cookie could not be signed — SESSION_SECRET missing?");
-    return new Response("SESSION_SECRET is not set, so the key cannot be remembered.", { status: 503 });
-  }
-  return redirect(request, ADMIN_TARGET, { "Set-Cookie": cookie });
+  const age = info.seenAt ? (Date.now() - new Date(info.seenAt).getTime()) / 1000 : Infinity;
+  return page({ ...info, stale: age > 600 });
 }

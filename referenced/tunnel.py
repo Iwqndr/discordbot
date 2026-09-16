@@ -6,12 +6,17 @@ can reach.
 
 Two providers, tried in this order unless `TUNNEL_PROVIDER` says otherwise:
 
-* **cloudflared** (preferred). A quick tunnel needs no account and holds a
-  connection far better in practice — localtunnel was observed going into a
-  "503 Tunnel Unavailable" state while its process stayed alive, which is
-  invisible until somebody tries to load the panel.
-* **localtunnel** (fallback). Used when cloudflared is not installed. Its
-  subdomain is stable, but the connection is less durable.
+* **localtunnel** (default). You pick the subdomain, so the address is the same
+  every restart — `https://<LOCALTUNNEL_SUBDOMAIN>.loca.lt`. Its connection is
+  less durable than cloudflared's and can go zombie (the process lives on while
+  the registration dies), which is what the watchdog below is for.
+* **cloudflared** (fallback). Tried when localtunnel is unavailable, or when
+  `TUNNEL_PROVIDER=cloudflared`. A quick tunnel needs no account and holds its
+  connection better, but the hostname is random on every start.
+
+The panel is now opened at its own address rather than proxied through the
+domain, so a browser hitting loca.lt directly sees localtunnel's one-time
+"Tunnel website ahead" notice. That is expected.
 
 Whichever runs, the public address is published to the Supabase `bot_status`
 row with id 'tunnel', and a watchdog polls that address and restarts the client
@@ -270,7 +275,7 @@ def start(port: int) -> bool:
         return False
 
     wanted = (os.getenv("TUNNEL_PROVIDER") or "").strip().lower()
-    order = ["cloudflared", "localtunnel"]
+    order = ["localtunnel", "cloudflared"]
     if wanted in ("cloudflared", "localtunnel"):
         order = [wanted]
 
