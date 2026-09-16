@@ -253,6 +253,14 @@ def _is_path_ignored(rel_path: str) -> bool:
     return res.returncode == 0
 
 
+def _staged_paths() -> list:
+    """Files currently in the index — what a commit would actually contain."""
+    res = _run_git("diff", "--cached", "--name-only")
+    if res.returncode != 0:
+        return []
+    return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+
+
 def _iter_ignored_but_tracked() -> list:
     if not _is_git_repo():
         return []
@@ -567,18 +575,28 @@ def perform_git_push(commit_message: str, remote_name: str,
 
     allowed = files if files is not None else _allowed_files()
     if allowed:
-        # An allow-listed file that no longer exists still needs its deletion
-        # staged, or the repo would show it as deleted forever.
-        removed = [p for p in allowed
-                   if p and not (PROJECT_ROOT / p).exists() and p in set(_list_tracked_files())]
-        r = _run_git("add", "--", *[f for f in allowed if f and f not in removed], check=True)
-        if r.returncode == 0 and removed:
-            r = _run_git("rm", "--cached", "--quiet", "--ignore-unmatch", "--", *removed, check=True)
+        # `-A` so an allow-listed file that has been deleted gets its removal
+        # staged too, rather than sitting in the tree as "deleted" forever.
+        r = _run_git("add", "-A", "--", *[f for f in allowed if f], check=True)
     else:
         r = _run_git("add", ".", check=True)
 
     if r.returncode != 0:
         return GitResult(success=False, message=f"git add failed: {r.stderr.strip()}")
+
+    # Nothing staged means none of the allowed files actually changed, but
+    # something else in the tree is dirty. Say so instead of letting git fail
+    # the commit with a bare "nothing added to commit".
+    if not _staged_paths():
+        held = _unpushed_changes(allowed)
+        if held:
+            listing = ", ".join(held[:6]) + ("…" if len(held) > 6 else "")
+            return GitResult(
+                success=False,
+                message=(f"Nothing to commit — the only changed files are held back by your Sync "
+                         f"rules: {listing}. Tick them in the Sync tab to send them."),
+            )
+        return GitResult(success=True, message="Nothing to commit — everything is already pushed.")
 
     r = _run_git("commit", "-m", commit_message or DEFAULT_COMMIT_MESSAGE, check=True)
     if r.returncode != 0:
