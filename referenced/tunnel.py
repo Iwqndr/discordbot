@@ -155,7 +155,17 @@ def _read_output(process: subprocess.Popen, pattern: re.Pattern, kind: str) -> N
             del _early_output[:-8]
         match = pattern.search(line)
         if match and not public_url():
-            _publish(match.group(0).rstrip("/"), kind)
+            found = match.group(0).rstrip("/")
+            # localtunnel silently hands back a *different* subdomain when the
+            # one asked for is already taken by another user. Publishing what
+            # the client actually says keeps the site pointed at a live tunnel
+            # instead of a dead address.
+            wanted = (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
+            if kind == "localtunnel" and f"//{wanted}.loca.lt" not in found:
+                warn(f"Panel tunnel: '{wanted}' was not available, so localtunnel gave "
+                     f"'{found}'. Set LOCALTUNNEL_SUBDOMAIN to something else, or "
+                     f"TUNNEL_PROVIDER=cloudflared, for a stable address.")
+            _publish(found, kind)
 
 
 def _spawn(args: list, kind: str, pattern: re.Pattern):
@@ -273,6 +283,12 @@ def start(port: int) -> bool:
     if os.getenv("DASHBOARD_TUNNEL", "1").strip().lower() in ("0", "false", "off", "no"):
         info("Panel tunnel: disabled (DASHBOARD_TUNNEL=0)")
         return False
+
+    # Starting twice would orphan the first client and publish a second address,
+    # leaving one of them stranded. One tunnel per process, always.
+    if _process is not None and _process.poll() is None:
+        info("Panel tunnel: already running, not starting another.")
+        return True
 
     wanted = (os.getenv("TUNNEL_PROVIDER") or "").strip().lower()
     order = ["localtunnel", "cloudflared"]

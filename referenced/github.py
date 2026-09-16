@@ -1,5 +1,3 @@
-"""GitHub pusher — scanner, git operations, rich terminal UI."""
-
 from __future__ import annotations
 
 import json
@@ -261,6 +259,31 @@ def _staged_paths() -> list:
     return [line.strip() for line in res.stdout.splitlines() if line.strip()]
 
 
+# Sync entries git refused during the most recent push, so the result can name
+# them rather than failing silently.
+_rejected_paths: list = []
+
+
+def _retry_add_existing(wanted: list):
+    """Stage only the paths git accepts when a batch `add` fails.
+
+    One bad entry — usually a leftover Sync entry for a file that was deleted
+    before it was ever tracked — makes the whole `git add` fail with exit 128.
+    This stages the paths that do resolve and reports the rest, so a single
+    stale entry cannot block every push.
+
+    Returns `(staged_any, rejected)`.
+    """
+    staged_any = False
+    rejected = []
+    for path in wanted:
+        if _run_git("add", "-A", "--", path).returncode == 0:
+            staged_any = True
+        else:
+            rejected.append(path)
+    return staged_any, rejected
+
+
 def _iter_ignored_but_tracked() -> list:
     if not _is_git_repo():
         return []
@@ -480,6 +503,26 @@ def load_settings() -> dict:
         return {"keep": [], "updated_at": 0}
 
 
+def _prune_stale_keep(keep: list) -> list:
+    """Drop allow-list entries for files that do not exist and are not tracked.
+
+    A kept path that git cannot resolve makes `git add` exit 128 and fails the
+    whole push. That happens naturally: delete a file, and its Sync entry stays
+    behind. Tracked-but-deleted paths are kept, because that entry is exactly
+    what stages the deletion.
+    """
+    tracked = set(_list_tracked_files())
+    stale = [p for p in keep if p not in tracked and not (PROJECT_ROOT / p).exists()]
+    if not stale:
+        return keep
+
+    surviving = [p for p in keep if p not in stale]
+    save_settings(surviving)
+    info(f"Removed {len(stale)} Sync entr(y/ies) for files that no longer exist: "
+         + ", ".join(stale[:6]))
+    return surviving
+
+
 def save_settings(keep: list) -> dict:
     clean = sorted({str(p).strip().replace("\\", "/") for p in keep if str(p).strip()})
     data = {"keep": clean, "updated_at": time.time()}
@@ -509,7 +552,9 @@ def _sensible_default(rel: str) -> bool:
 def _allowed_files() -> list | None:
     """The stored allow-list, or None when no rules are saved yet."""
     keep = load_settings().get("keep") or []
-    return keep or None
+    if not keep:
+        return None
+    return _prune_stale_keep(keep)
 
 
 def _repo_files() -> list:
@@ -581,7 +626,26 @@ def perform_git_push(commit_message: str, remote_name: str,
     if allowed:
         # `-A` so an allow-listed file that has been deleted gets its removal
         # staged too, rather than sitting in the tree as "deleted" forever.
-        r = _run_git("add", "-A", "--", *[f for f in allowed if f], check=True)
+        #
+        # `check=False` on purpose: a path git will not accept (a stale entry
+        # for a file that no longer exists, say) used to raise CalledProcessError
+        # straight out of the route as a 500. The return code is reported below
+        # instead, and the staging is retried without the offending paths.
+        wanted = [f for f in allowed if f]
+        r = _run_git("add", "-A", "--", *wanted)
+        if r.returncode != 0:
+            staged_any, rejected = _retry_add_existing(wanted)
+            if not staged_any:
+                detail = (r.stderr or r.stdout).strip()
+                extra = ""
+                if rejected:
+                    extra = ("\nThese Sync entries are not valid paths, so they were skipped: "
+                             + ", ".join(rejected[:6]))
+                return GitResult(success=False, message=f"git add failed: {detail}{extra}")
+            # Something was staged, so carry on to the commit. The rejected
+            # entries are reported alongside the result.
+            _rejected_paths.clear()
+            _rejected_paths.extend(rejected)
     else:
         r = _run_git("add", ".", check=True)
 
