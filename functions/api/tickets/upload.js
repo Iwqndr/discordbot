@@ -18,9 +18,13 @@ const BUCKET = "ticket-attachments";
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
+// The anon key cannot write into this bucket — RLS refuses it with "new row
+// violates row-level security policy", which is what produced the 502. This
+// runs server-side with the caller already identified by their session, so the
+// service key is correct here and never reaches a browser.
 function storageConfig(env) {
   const url = String(env.SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
-  const key = String(env.SUPABASE_ANON_KEY ?? "").trim();
+  const key = String(env.SUPABASE_SERVICE_KEY ?? "").trim();
   if (!url || !key) return null;
   return { url, key };
 }
