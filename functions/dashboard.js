@@ -1,10 +1,8 @@
 // GET /dashboard — send a signed-in member to the admin panel.
 //
-// The panel is a Flask app on the operator's own machine, published through
-// localtunnel. It is served through `/panel/*` rather than linked directly,
-// because that proxy is what adds the header localtunnel needs — a direct
-// loca.lt link shows every browser a "Tunnel website ahead!" interstitial,
-// which reads like a security warning.
+// Points at `/panel/admin`, not `/panel/`: the tunnel root serves the bot's
+// crew page, so `/panel/` landed people on the events hub instead of the panel
+// they asked for. `/admin` is the panel itself.
 //
 // The gate (signed in, and holding a role listed in PANEL_ROLE_IDS) lives in
 // the proxy, so it covers every panel path rather than just this entry point.
@@ -13,7 +11,7 @@ export async function onRequestGet({ request }) {
   return new Response(null, {
     status: 302,
     headers: {
-      Location: new URL("/panel/", request.url).toString(),
+      Location: new URL("/panel/admin", request.url).toString(),
       "Cache-Control": "no-store",
     },
   });
