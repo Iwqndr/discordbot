@@ -59,17 +59,20 @@ async function handoffSignature(env, uid, expires) {
  * Returns null when the handoff is not configured or the member is not signed
  * in, so the caller can fall back to the plain link page.
  */
-async function handoffUrl(request, env, tunnelUrl) {
+async function handoffUrl(request, env, tunnelUrl, next = "/admin") {
   if (!env.PANEL_HANDOFF_SECRET) return null;
 
   const uid = await currentUser(request, env);
   if (!uid) return null;
 
+  // Only local panel paths, so this can never be used as an open redirect.
+  const target = next.startsWith("/") && !next.startsWith("//") ? next : "/admin";
+
   const expires = String(Math.floor(Date.now() / 1000) + 120);
   const sig = await handoffSignature(env, uid, expires).catch(() => null);
   if (!sig) return null;
 
-  const params = new URLSearchParams({ uid: String(uid), expires, sig, next: "/admin" });
+  const params = new URLSearchParams({ uid: String(uid), expires, sig, next: target });
   return `${tunnelUrl}/auth/handoff?${params.toString()}`;
 }
 
@@ -189,10 +192,13 @@ export async function onRequestGet({ request, env }) {
 
   const age = info.seenAt ? (Date.now() - new Date(info.seenAt).getTime()) / 1000 : Infinity;
 
-  // Already signed in on the member page: go straight in, no second Discord
-  // authorisation. Falls through to the link page when the handoff is not
-  // configured or the visitor is not signed in.
-  const direct = await handoffUrl(request, env, info.url).catch(() => null);
+  // Signed in on the member site already? Go straight in — this is what lets a
+  // moderator reach the panel without ever authorising on it separately, and it
+  // is why the tunnel's address changing on restart does not matter: the
+  // handoff reads whatever address is current instead of relying on a callback
+  // registered with Discord.
+  const requested = new URL(request.url).searchParams.get("next") || "/admin";
+  const direct = await handoffUrl(request, env, info.url, requested).catch(() => null);
   if (direct) {
     return new Response(null, {
       status: 302,

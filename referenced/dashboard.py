@@ -236,6 +236,20 @@ def _safe_next(path, fallback="/"):
 
 @app.route("/auth/discord")
 def auth_discord():
+    """Start a login.
+
+    Preferred route: bounce to the member site's `/dashboard`, which already
+    knows this person from its own session and will hand a signed proof back.
+    That keeps the panel's callback out of the picture entirely — which matters
+    because the tunnel address changes on every restart, and a callback
+    registered with Discord cannot keep up with that.
+
+    Falls back to running OAuth here when the member site is not configured.
+    """
+    if MEMBER_SITE_URL:
+        target = _safe_next(request.args.get("next"), "/admin")
+        return redirect(f"{MEMBER_SITE_URL}/dashboard?next={urllib.parse.quote(target)}")
+
     if not _oauth_ready():
         return redirect("/?login=unavailable")
     params = {
