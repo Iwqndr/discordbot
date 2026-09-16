@@ -38,7 +38,7 @@ VERIFIED_ROLE_ID = _env_int("VERIFIED_ROLE_ID", 1548559332063313921)
 MESSAGE_CATEGORY_ID = _env_int("MESSAGE_CATEGORY_ID", 1548581331175350363)
 SYSTEM_CATEGORY_ID = _env_int("SYSTEM_CATEGORY_ID", 1548582743368147015)
 
-# Support tickets from the member page (templates/commands.html).
+# Support tickets from the member page (templates/member.html).
 # TICKET_CHANNEL_ID is the channel the bot posts new tickets in.
 # TICKET_PING_ROLE_ID is an optional role to ping for every new ticket.
 TICKET_CHANNEL_ID = _env_int("TICKET_CHANNEL_ID", 0)

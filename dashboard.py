@@ -95,7 +95,7 @@ def index():
     The member page is the site root; the staff panel lives at /admin, so the
     two can never be confused for one another.
     """
-    return render_template("commands.html")
+    return render_template("member.html")
 
 
 @app.route("/admin")
@@ -3498,7 +3498,7 @@ def api_admin_me():
             reason = "not_in_guild" if ctx["checked"] else "unverifiable"
         elif not ctx["live"]:
             # Known only from the synced member table: that carries role names
-            # but not the role ids the access matrix is keyed on, so the honest
+            # but not the role ids the role access is keyed on, so the honest
             # answer is "cannot tell yet", never a silent full grant.
             allowed = False
             reason = "unverified"

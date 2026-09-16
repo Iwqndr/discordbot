@@ -401,11 +401,13 @@
   .profile-backdrop.visible { opacity: 1; pointer-events: auto; }
   .profile-panel {
     position: fixed; top: 0; left: 0;
-    width: 360px; max-width: 90vw; height: 100vh;
+    width: 396px; max-width: 94vw; height: 100vh;
     background: var(--card); border-right: 2px solid var(--border);
     transform: translateX(-100%);
-    transition: transform 0.42s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 50; overflow-y: auto; display: flex; flex-direction: column;
+    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 50; overflow-y: auto; overflow-x: hidden;
+    display: flex; flex-direction: column;
+    box-shadow: 14px 0 44px rgba(0, 0, 0, 0.14);
   }
   .profile-panel.visible { transform: translateX(0); }
   .profile-close {
@@ -418,45 +420,102 @@
   }
   .profile-close:hover { background: rgba(0,0,0,0.55); transform: scale(1.05); }
   .profile-close svg { width: 14px; height: 14px; }
+  /* The hero is clipped separately so the banner can breathe (a slow scale on
+     open) without spilling over the body. The avatar hangs past the bottom
+     edge, so the hero itself must not clip. */
+  .profile-hero { position: relative; height: 148px; flex: none; background: var(--accent-soft); }
+  .profile-hero-clip { position: absolute; inset: 0; overflow: hidden; }
   .profile-banner {
-    height: 120px; background-size: cover; background-position: center;
-    background-color: var(--accent-soft); position: relative;
+    position: absolute; inset: 0; background-size: cover; background-position: center;
+    background-color: var(--accent-soft);
+    animation: heroIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   }
-  .profile-banner::after {
-    content: ""; position: absolute; inset: 0;
-    background: linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.4));
+  @keyframes heroIn { from { opacity: 0.4; transform: scale(1.08); } to { opacity: 1; transform: none; } }
+  .profile-hero-scrim {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(to bottom, rgba(12, 12, 14, 0.06) 0%, rgba(12, 12, 14, 0.26) 52%, var(--card) 100%);
   }
-  .profile-avatar-wrap { position: relative; margin-top: -46px; margin-left: 22px; z-index: 2; }
-  .profile-avatar {
-    width: 92px; height: 92px; border-radius: 24px;
-    border: 4px solid var(--card); background: var(--card); object-fit: cover;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  .profile-avatar-btn {
+    position: absolute; left: 20px; bottom: -44px; padding: 0; margin: 0;
+    width: 92px; height: 92px; border-radius: 26px; overflow: hidden;
+    border: 4px solid var(--card); background: var(--card); cursor: zoom-in;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+    animation: avatarIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
   }
-  .profile-status-dot {
-    position: absolute; bottom: 4px; right: 4px;
-    width: 18px; height: 18px; border-radius: 50%;
-    background: #7bd88f; border: 4px solid var(--card);
+  .profile-avatar-btn:hover { transform: translateY(-4px) scale(1.03); box-shadow: 0 16px 30px rgba(0, 0, 0, 0.24); }
+  .profile-avatar-btn:active { transform: translateY(-1px) scale(0.99); }
+  .profile-avatar-btn:focus-visible { outline: 2px solid var(--accent-dark); outline-offset: 3px; }
+  @keyframes avatarIn {
+    from { opacity: 0; transform: translateY(14px) scale(0.9); }
+    to { opacity: 1; transform: none; }
   }
-  .profile-body { padding: 14px 22px 30px; flex: 1; display: flex; flex-direction: column; }
+  .profile-avatar { width: 100%; height: 100%; display: block; object-fit: cover; }
+  /* No picture to show: the initial keeps the shape and the panel calm. */
+  .profile-avatar-btn.fallback {
+    cursor: default; display: grid; place-items: center;
+    font-family: "Fredoka", sans-serif; font-size: 34px; font-weight: 600; color: var(--accent-dark);
+  }
+  .profile-avatar-btn.fallback:hover { transform: none; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2); }
+  .profile-body { padding: 58px 22px 30px; flex: 1; display: flex; flex-direction: column; }
+  /* One staggered entrance for the whole panel: every block carries --i. */
+  .profile-body > * {
+    animation: pIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 55ms);
+  }
+  @keyframes pIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  html.reduce-motion .profile-body > *,
+  html.reduce-motion .profile-avatar-btn,
+  html.reduce-motion .profile-banner { animation: none !important; }
+  html.reduce-motion .profile-avatar-btn { transition: none !important; }
   .profile-name {
-    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 22px;
+    font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 23px;
     color: var(--text); line-height: 1.2; word-break: break-word;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   }
   .profile-handle {
-    font-family: "JetBrains Mono", monospace; font-size: 13px;
-    color: var(--muted); margin-top: 2px; word-break: break-all;
+    font-family: "JetBrains Mono", monospace; font-size: 12.5px;
+    color: var(--muted); margin-top: 3px; word-break: break-all;
   }
+  .profile-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+  .profile-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--bg); border: 1.5px solid var(--border-soft); color: var(--muted);
+  }
+  .profile-pill .chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chip-color, var(--muted)); }
+  .profile-pill.role {
+    color: var(--text);
+    border-color: var(--chip-color, var(--border));
+  }
+  .profile-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .profile-act {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 12px; border-radius: 11px; cursor: pointer;
+    font-family: inherit; font-size: 12px; font-weight: 800;
+    background: var(--bg); border: 1.5px solid var(--border-soft); color: var(--text);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, background 0.2s ease;
+  }
+  .profile-act:hover { transform: translateY(-1px); border-color: var(--accent); background: var(--accent-soft); }
+  .profile-act:active { transform: translateY(0) scale(0.98); }
+  .profile-act svg { width: 14px; height: 14px; }
+  .profile-act.done { border-color: var(--accent-dark); background: var(--accent-soft); color: var(--accent-dark); }
   .profile-bio {
-    color: var(--text); font-size: 14px; font-weight: 500;
-    margin-top: 12px; padding: 12px 14px; background: var(--bg);
-    border-radius: 12px; border: 1.5px solid var(--border-soft);
-    min-height: 44px; line-height: 1.5;
+    color: var(--text); font-size: 13.5px; font-weight: 500;
+    padding: 12px 14px; background: var(--bg);
+    border-radius: 14px; border: 1.5px solid var(--border-soft);
+    min-height: 44px; line-height: 1.55;
   }
   .profile-bio.empty { color: var(--muted); font-style: italic; }
   .profile-section-title {
     font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 11px;
     letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--muted); margin-top: 20px; margin-bottom: 8px;
+    color: var(--muted); margin-top: 22px; margin-bottom: 9px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .profile-section-title::after {
+    content: ""; flex: 1; height: 1.5px; border-radius: 2px; background: var(--border-soft);
   }
   .profile-roles { display: flex; flex-wrap: wrap; gap: 6px; }
   .profile-role-chip {
@@ -464,19 +523,33 @@
     font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
     background: var(--bg);
     border: 1.5px solid var(--chip-color, var(--border-soft));
+    color: var(--text);
     color: color-mix(in srgb, var(--chip-color, var(--muted)) 80%, #000 20%);
+    animation: pIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 28ms);
+    transition: transform 0.18s ease;
   }
+  .profile-role-chip:hover { transform: translateY(-1px); }
   [data-theme="dark"] .profile-role-chip {
+    color: var(--text);
     color: color-mix(in srgb, var(--chip-color, var(--muted)) 65%, #fff 35%);
   }
   .profile-role-chip .chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chip-color, var(--muted)); }
-  .profile-meta { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  html.reduce-motion .profile-role-chip { animation: none !important; }
+  .profile-meta { margin-top: 2px; display: flex; flex-direction: column; gap: 8px; }
   .profile-meta-row {
-    display: flex; justify-content: space-between; gap: 12px;
-    font-size: 13px; padding: 8px 12px; background: var(--bg);
-    border-radius: 10px; border: 1.5px solid var(--border-soft);
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; padding: 9px 12px; background: var(--bg);
+    border-radius: 12px; border: 1.5px solid var(--border-soft);
+    transition: border-color 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .profile-meta-label { color: var(--muted); font-weight: 700; }
+  .profile-meta-row:hover { border-color: var(--border); transform: translateX(2px); }
+  .profile-meta-icon {
+    width: 26px; height: 26px; flex: none; border-radius: 8px; display: grid; place-items: center;
+    background: var(--card); border: 1.5px solid var(--border-soft); color: var(--muted);
+  }
+  .profile-meta-icon svg { width: 14px; height: 14px; }
+  .profile-meta-label { color: var(--muted); font-weight: 700; flex: 1; }
   .profile-meta-value {
     color: var(--text); font-weight: 600;
     font-family: "JetBrains Mono", monospace; font-size: 12px;
@@ -1207,6 +1280,9 @@
   .hub-sub { font-size: 14px; }
 
   .sub-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  /* A parked tab row keeps its element and its listener in the DOM but takes
+     no space on the page. */
+  .sub-tabs.hidden { display: none; }
   .sub-tab {
     background: var(--card); border: 2px solid var(--border); color: var(--muted);
     border-radius: 999px; padding: 7px 14px; font-family: inherit;
@@ -1234,10 +1310,18 @@
   .mem-group-title { font-family: "Fredoka", sans-serif; font-size: 15px; font-weight: 600; margin: 16px 0 8px; }
   .mem-empty { color: var(--muted); font-size: 14px; font-weight: 600; text-align: center; padding: 26px 10px; }
 
-  .prog { background: var(--bg); border: 2px solid var(--border-soft); border-radius: 14px; padding: 12px 14px; margin-bottom: 16px; }
+  .prog { background: var(--bg); border: 2px solid var(--border-soft); border-radius: 14px; padding: 12px 14px; margin-bottom: 4px; transition: border-color 0.22s ease; }
+  .prog:hover { border-color: var(--border); }
   .prog-top { display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
   .prog-track { height: 8px; border-radius: 999px; background: var(--card); border: 1.5px solid var(--border-soft); overflow: hidden; margin: 8px 0 10px; }
-  .prog-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+  /* Grows from the left on open rather than appearing already full. */
+  .prog-fill {
+    height: 100%; background: var(--accent); border-radius: 999px;
+    transform-origin: left; animation: progGrow 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.18s backwards;
+  }
+  @keyframes progGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  html.reduce-motion .prog-fill { animation: none !important; }
+  .profile-meta-ago { font-weight: 600; color: var(--muted); opacity: 0.75; margin-left: 6px; font-size: 11.5px; }
   .prog-stats { display: flex; gap: 18px; }
   .prog-stats b { display: block; font-family: "Fredoka", sans-serif; font-size: 17px; font-weight: 600; color: var(--text); }
   .prog-stats span { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
@@ -2079,15 +2163,16 @@
   <section class="view" id="view-members" hidden>
     <div class="panel">
       <div class="panel-title">Members</div>
-      <p class="panel-sub">Search anyone in the server, or browse the leaderboards and staff roster.</p>
+      <p class="panel-sub">Search anyone in the server by name, @username or user ID.</p>
       <div class="ticket-toolbar" style="margin-bottom:12px">
         <input class="q-input" id="memberQuery" placeholder="Search name, @username or user ID" autocomplete="off" spellcheck="false">
         <button class="btn" id="memberRefresh">Reload</button>
       </div>
-      <div class="sub-tabs" id="memberTabs">
+      <!-- The Leaderboards and Staff Directory tabs are parked, not deleted:
+           `directory.tab` still understands "leaders" and "staff", so bringing
+           them back is just putting these two buttons back. -->
+      <div class="sub-tabs hidden" id="memberTabs">
         <button class="sub-tab active" data-mtab="all">All members</button>
-        <button class="sub-tab" data-mtab="leaders">Leaderboards &amp; Progression</button>
-        <button class="sub-tab" data-mtab="staff">Staff Directory &amp; Roster</button>
       </div>
       <div id="memberMeta" class="results-meta" style="margin-bottom:12px">Loading members...</div>
       <div id="memberRows" class="mem-list"></div>
@@ -2181,7 +2266,7 @@
     <div class="status-widget" id="statusWidget">
       <button class="sw-head" id="swToggle">
         <span class="sw-dot" id="swDot"></span>
-        <span class="sw-name">live server status</span>
+        <span class="sw-name">server status</span>
         <span class="sw-ping" id="swPing">--</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </button>
@@ -3536,64 +3621,143 @@ function openProfilePanel() {
   profileBackdrop.classList.add("visible");
 }
 
+/* `#8b5cf6` (or `#abc`) to `139, 92, 246` for rgba() tints. Unreadable or
+   plain-black role colours fall back to the page accent so a tint is never
+   invisible or muddy. */
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || "").trim());
+  const fallback = "110, 168, 201";
+  if (!m) return fallback;
+  let h = m[1];
+  if (h.length === 3) h = h.split("").map(c => c + c).join("");
+  const n = parseInt(h, 16);
+  if (n === 0) return fallback;
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
+
+/* A date the reader can scan: "12 Mar 2026" plus how long ago in words. */
+function profileDate(iso) {
+  if (!iso) return { exact: "Unknown", ago: "" };
+  const d = new Date(iso);
+  if (isNaN(d)) return { exact: "Unknown", ago: "" };
+  const exact = d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const days = Math.floor((Date.now() - d) / 86400000);
+  let ago;
+  if (days <= 0) ago = "today";
+  else if (days < 30) ago = `${days} day${days === 1 ? "" : "s"} ago`;
+  else if (days < 365) { const m = Math.floor(days / 30); ago = `${m} month${m === 1 ? "" : "s"} ago`; }
+  else { const y = Math.floor(days / 365); ago = `${y} year${y === 1 ? "" : "s"} ago`; }
+  return { exact, ago };
+}
+
+/* The panel is drawn from scratch on every open, so the staggered entrance in
+   the stylesheet replays on its own — no classes to add or remove. */
 function openProfile(member) {
   state.activeProfile = member;
 
   const roles = member.roles || [];
   const highest = roles.reduce((a, b) => (a.tier > b.tier ? a : b), { tier: -1, name: "Members", color: "#96908a" });
 
-  const bannerStyle = member.banner_url ? `background-image: url('${member.banner_url}');` : "";
-  const joinedDate = member.joined_at ? new Date(member.joined_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Unknown";
-  const createdDate = member.created_at ? new Date(member.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Unknown";
+  const avatar = member.avatar_url || "";
+  const banner = member.banner_url || "";
+  // Without a banner the hero is tinted with the member's top role colour, so
+  // it still reads as *this* person instead of a flat grey block.
+  const tint = hexToRgb(highest.color);
+  const bannerStyle = banner
+    ? `background-image: url('${escapeHtml(banner)}');`
+    : `background-image: linear-gradient(140deg, rgba(${tint}, 0.9) 0%, rgba(${tint}, 0.4) 58%, rgba(${tint}, 0.06) 100%);`;
+  const joined = profileDate(member.joined_at);
+  const created = profileDate(member.created_at);
 
   const roleChips = roles
     .slice()
     .sort((a, b) => b.tier - a.tier)
-    .map(r => `<span class="profile-role-chip" style="--chip-color: ${escapeHtml(r.color)};"><span class="chip-dot"></span>${escapeHtml(r.name)}</span>`)
+    .map((r, i) => `<span class="profile-role-chip" style="--chip-color: ${escapeHtml(r.color)}; --i: ${i};"><span class="chip-dot"></span>${escapeHtml(r.name)}</span>`)
     .join("");
 
+  // The face doubles as a button into the shared image viewer, so it needs its
+  // own one-image set registered before the panel is drawn.
+  const avatarSet = `profile-avatar-${member.user_id}`;
+  if (avatar) gallerySets[avatarSet] = [avatar];
+  const avatarBtn = avatar
+    ? `<button type="button" class="profile-avatar-btn" title="View picture"
+             data-gallery-set="${escapeHtml(avatarSet)}" data-gallery-index="0">
+         <img class="profile-avatar" src="${escapeHtml(avatar)}" alt=""
+              onerror="this.closest('.profile-avatar-btn').classList.add('fallback'); this.remove();">
+       </button>`
+    : `<span class="profile-avatar-btn fallback">${escapeHtml(((member.display_name || member.username || "?").trim().charAt(0) || "?").toUpperCase())}</span>`;
+
+  const metaRow = (iconName, label, value, extra) => `
+    <div class="profile-meta-row">
+      <span class="profile-meta-icon">${icon(iconName)}</span>
+      <span class="profile-meta-label">${label}${extra ? `<span class="profile-meta-ago">${escapeHtml(extra)}</span>` : ""}</span>
+      <span class="profile-meta-value">${value}</span>
+    </div>`;
+
   profileContent.innerHTML = `
-    <div class="profile-banner" style="${bannerStyle}"></div>
-    <div class="profile-avatar-wrap">
-      <img class="profile-avatar" src="${escapeHtml(member.avatar_url || '')}" alt="">
-      <span class="profile-status-dot"></span>
+    <div class="profile-hero">
+      <div class="profile-hero-clip"><div class="profile-banner" style="${bannerStyle}"></div></div>
+      <div class="profile-hero-scrim"></div>
+      ${avatarBtn}
     </div>
     <div class="profile-body">
-      <div class="profile-name">${styledNameHtml(member)}${staffTitleHtml(member)}</div>
-      <div class="profile-handle">@${escapeHtml(member.username)}</div>
+      <div class="profile-name" style="--i: 1">${styledNameHtml(member)}${staffTitleHtml(member)}</div>
+      <div class="profile-handle" style="--i: 2">@${escapeHtml(member.username)}</div>
 
-      <div class="profile-bio ${member.bio ? '' : 'empty'}">
+      <div class="profile-pills" style="--i: 3">
+        <span class="profile-pill role" style="--chip-color: ${escapeHtml(highest.color)};"><span class="chip-dot"></span>${escapeHtml(highest.name)}</span>
+        <span class="profile-pill">${roles.length} role${roles.length === 1 ? "" : "s"}</span>
+        ${joined.ago ? `<span class="profile-pill">here ${escapeHtml(joined.ago)}</span>` : ""}
+      </div>
+
+      <div class="profile-actions" style="--i: 4">
+        <button type="button" class="profile-act" data-profile-copy="${escapeHtml(member.user_id)}" data-profile-label="Copy ID">${icon("copy")} Copy ID</button>
+        <button type="button" class="profile-act" data-profile-copy="<@${escapeHtml(member.user_id)}>" data-profile-label="Copy mention">${icon("at")} Copy mention</button>
+      </div>
+
+      <div class="profile-section-title" style="--i: 5">About</div>
+      <div class="profile-bio ${member.bio ? '' : 'empty'}" style="--i: 5">
         ${member.bio ? escapeHtml(member.bio) : "No bio available."}
       </div>
 
-      ${typeof progressionHtml === "function" ? progressionHtml(member) : ""}
-      <div class="profile-section-title">Roles (${roles.length})</div>
+      ${typeof progressionHtml === "function" ? progressionHtml(member, 6) : ""}
+
+      <div class="profile-section-title" style="--i: 7">Roles</div>
       <div class="profile-roles">${roleChips || '<span style="color: var(--muted); font-size: 13px;">No roles</span>'}</div>
 
+      <div class="profile-section-title" style="--i: 8">Details</div>
       <div class="profile-meta">
-        <div class="profile-meta-row">
-          <span class="profile-meta-label">User ID</span>
-          <span class="profile-meta-value">${escapeHtml(member.user_id)}</span>
-        </div>
-        <div class="profile-meta-row">
-          <span class="profile-meta-label">Joined</span>
-          <span class="profile-meta-value">${escapeHtml(joinedDate)}</span>
-        </div>
-        <div class="profile-meta-row">
-          <span class="profile-meta-label">Account Created</span>
-          <span class="profile-meta-value">${escapeHtml(createdDate)}</span>
-        </div>
-        <div class="profile-meta-row">
-          <span class="profile-meta-label">Highest Role</span>
-          <span class="profile-meta-value" style="color: ${escapeHtml(highest.color)};">${escapeHtml(highest.name)}</span>
-        </div>
+        ${metaRow("id", "User ID", escapeHtml(member.user_id))}
+        ${metaRow("calendar", "Joined", escapeHtml(joined.exact), joined.ago)}
+        ${metaRow("clock", "Account created", escapeHtml(created.exact), created.ago)}
+        ${metaRow("shield", "Highest role", `<span style="color: ${escapeHtml(highest.color)};">${escapeHtml(highest.name)}</span>`)}
       </div>
-
     </div>
   `;
 
   openProfilePanel();
 }
+
+/* Copy buttons in the panel: the label flips to a confirmation for a moment
+   rather than throwing a toast for something this small. */
+profileContent.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-profile-copy]");
+  if (!btn) return;
+  const text = btn.dataset.profileCopy;
+  const label = btn.dataset.profileLabel || "Copy";
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.classList.add("done");
+    btn.innerHTML = `${icon("check")} Copied`;
+    setTimeout(() => {
+      if (!btn.isConnected) return;
+      btn.classList.remove("done");
+      btn.innerHTML = `${icon("copy")} ${escapeHtml(label)}`;
+    }, 1400);
+  } catch (err) {
+    toast("Copy did not work. Select it manually instead.", "error");
+  }
+});
 
 /* ---------- staff titles ----------
    The badge rules are resolved on the server for every directory row, and
@@ -3647,7 +3811,12 @@ const ICON = {
   login: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line>',
   chevron: '<polyline points="6 9 12 15 18 9"></polyline>',
   clip: '<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>',
-  check: '<polyline points="20 6 9 17 4 12"></polyline>'
+  check: '<polyline points="20 6 9 17 4 12"></polyline>',
+  id: '<path d="M16 10h2"></path><path d="M16 14h2"></path><path d="M6.17 15a3 3 0 0 1 5.66 0"></path><circle cx="9" cy="11" r="2"></circle><rect x="2" y="5" width="20" height="14" rx="2"></rect>',
+  at: '<circle cx="12" cy="12" r="4"></circle><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"></path>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line>',
+  clock: '<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>'
 };
 
 function icon(name) {
@@ -4005,8 +4174,12 @@ function showView(name) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+/* Only the hub cards switch views. The body carries data-view too (it drives
+   the header CSS), so matching a bare [data-view] meant *any* click on the page
+   re-ran showView: scroll to top, header replay, and — in the members view — a
+   full reload of the member list. */
 document.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-view]");
+  const btn = e.target.closest(".hub-card[data-view]");
   if (!btn) return;
   if (btn.dataset.view === "support") openSupport();
   else showView(btn.dataset.view);
@@ -4099,6 +4272,8 @@ function setPage(html, direction) {
   glideCard(() => {
     supportBody.innerHTML = `<div class="page ${direction === "back" ? "from-back" : ""}">${html}</div>`;
     supportBody.scrollTop = 0;
+    // A page here can bring its own scrollable bits (an open dropdown list).
+    markLenisScrollables(supportBody);
   });
 }
 
@@ -6078,8 +6253,11 @@ async function ensureMembersView(force) {
   renderMembers();
 }
 
-/* ---------- member detail (reuses the profile panel) ---------- */
-function progressionHtml(member) {
+/* ---------- member detail (reuses the profile panel) ----------
+   `idx` is the panel's stagger slot, so the progression blocks fade in with
+   everything else instead of popping ahead of it. */
+function progressionHtml(member, idx) {
+  const slot = Number.isFinite(idx) ? idx : 6;
   const roles = member.roles || [];
   const level = memberLevel(member);
   const maxTier = Math.max(hub.maxTier || 0, level, 1);
@@ -6089,8 +6267,8 @@ function progressionHtml(member) {
   const joinDays = member.joined_at
     ? Math.max(0, Math.floor((Date.now() - new Date(member.joined_at)) / 86400000)) : null;
   return `
-    <div class="profile-section-title">Progression</div>
-    <div class="prog">
+    <div class="profile-section-title" style="--i: ${slot}">Progression</div>
+    <div class="prog" style="--i: ${slot}">
       <div class="prog-top"><span>Rank tier</span><span>${level} / ${maxTier}</span></div>
       <div class="prog-track"><div class="prog-fill" style="width: ${pct}%"></div></div>
       <div class="prog-stats">
@@ -6640,6 +6818,24 @@ function setSmoothScroll(on) {
     lenis = null;
     document.documentElement.classList.remove("lenis-on");
   }
+}
+
+/* Lenis must not fight a panel's own scroll container, so those get marked
+   `data-lenis-prevent`. The trap is marking a box that only *clips* its
+   content: Lenis then refuses the wheel over it, and the page falls back to
+   native scrolling — which is what made scrolling go unsmoothed whenever the
+   pointer happened to be over a role card, the members list or the info rows.
+   Ask each element whether it can really scroll instead of trusting a class
+   list. Re-run it after rendering new content into a panel. */
+function markLenisScrollables(root) {
+  (root || document).querySelectorAll(
+    ".sheet-body, .dash-body, .dash-side, .dash-main, .font-list, .tk-list, .profile-panel, " +
+    ".ticket-list, .thread, .mem-list, .role-body, .dropdown-list, .status-widget"
+  ).forEach(el => {
+    const css = getComputedStyle(el);
+    if (/(auto|scroll)/.test(css.overflowY)) el.setAttribute("data-lenis-prevent", "");
+    else el.removeAttribute("data-lenis-prevent");
+  });
 }
 
 function prefersReducedMotion() {
@@ -7277,7 +7473,7 @@ try {
 
 /* ---------- wiring ---------- */
 document.addEventListener("click", (e) => {
-  const card = e.target.closest('[data-view="members"]');
+  const card = e.target.closest('.hub-card[data-view="members"]');
   if (card) ensureMembersView();
 });
 
@@ -7487,11 +7683,8 @@ loadMemberProfile().then(() => {
     ensureMembersView(true);
   }
 });
-/* Lenis must not fight the scroll containers inside panels. */
-document.querySelectorAll(
-  ".sheet-body, .dash-body, .dash-side, .dash-main, .font-list, .tk-list, .profile-panel, " +
-  ".ticket-list, .thread, .mem-list, .role-body"
-).forEach(el => el.setAttribute("data-lenis-prevent", ""));
+/* Panels that really scroll keep the wheel; everything else stays smooth. */
+markLenisScrollables();
 pollStatus();
 statusTimer = setInterval(pollStatus, 15000);
 </script>
