@@ -99,12 +99,59 @@ def set_bot(b):
 # PAGE
 # ==========================================================
 
+# The tunnel address serves the PANEL, not the member hub.
+#
+# member.html belongs to the Cloudflare Pages site (`MEMBER_SITE_URL`, i.e.
+# jamesheston.pages.dev), which serves it and brings its own Functions for its
+# data. The tunnel exists so the staff panel can be reached from anywhere else,
+# so a request arriving on the tunnel's own address is panel traffic. Without
+# this, opening the tunnel link landed on a second, unlisted copy of the member
+# hub — command list and all — on an address nobody is watching, with the panel
+# hidden a click behind it.
+#
+# Only the two hub *pages* are affected; every panel route, API and the local
+# address behave exactly as before.
+
+_TUNNEL_HOST_SUFFIXES = (".trycloudflare.com", ".loca.lt")
+
+
+def _via_tunnel() -> bool:
+    """Did this request arrive over the published tunnel address?"""
+    host = (request.host or "").split(":")[0].strip().lower()
+    if not host:
+        return False
+    if host.endswith(_TUNNEL_HOST_SUFFIXES):
+        return True
+    # A named tunnel, or any other host, is trusted only when it is the address
+    # that was actually published. Imported here so this module does not depend
+    # on the tunnel starting first.
+    try:
+        import tunnel
+
+        published = urllib.parse.urlsplit(tunnel.public_url() or "").hostname or ""
+    except Exception:
+        return False
+    return bool(published) and host == published.lower()
+
+
+@app.before_request
+def _member_hub_is_not_public():
+    """Send the member hub's address on the tunnel to the panel instead."""
+    if request.path not in ("/", "/member"):
+        return None
+    if not _via_tunnel():
+        return None
+    return redirect("/admin")
+
+
 @app.route("/")
 def index():
     """Public member hub: support tickets, command list, and info.
 
     The member page is the site root; the staff panel lives at /admin, so the
-    two can never be confused for one another.
+    two can never be confused for one another. The public tunnel address is the
+    exception — there the member page is not served at all, because that
+    address is the panel's (see _member_hub_is_not_public above).
     """
     return render_template("member.html")
 
@@ -117,7 +164,10 @@ def admin_page():
 
 @app.route("/member")
 def member_page():
-    """The member hub's original address, kept so existing links still work."""
+    """The member hub's original address, kept so existing links still work.
+
+    Over the tunnel this lands on /admin as well, for the same reason as `/`.
+    """
     return redirect("/")
 
 

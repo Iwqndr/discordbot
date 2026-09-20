@@ -9,6 +9,10 @@ import os
 import logging
 import threading
 import socket
+import asyncio
+import ssl
+import aiohttp
+import discord
 import psutil
 import flask
 import github
@@ -135,6 +139,71 @@ def free_dashboard_port():
         _kill_pid(pid)
 
 
+# ---------------------------------------------------------------------------
+# Discord startup
+# ---------------------------------------------------------------------------
+# A TLS handshake to Discord can fail for a moment — an edge that answers
+# "handshake failure", a network burp, a DNS hiccup — and discord.py reports that
+# as a startup error. Ending the process on it is the wrong trade: Flask and the
+# tunnel are already up, and the panel is exactly what is wanted when Discord is
+# misbehaving. So the login is retried, and only errors that mean "try again" are
+# caught, because a bad token must still fail immediately.
+
+# Worth another attempt: connection, TLS, DNS and timeout failures.
+_TRANSIENT_ERRORS = (
+    aiohttp.ClientError,
+    ssl.SSLError,
+    socket.gaierror,
+    ConnectionError,
+    TimeoutError,
+)
+
+# Seconds to wait between login attempts; the last value repeats until it works.
+_RETRY_DELAYS = (5, 15, 30, 60, 120, 300)
+
+
+def _retry_delay(attempt: int) -> int:
+    return _RETRY_DELAYS[min(max(attempt, 1) - 1, len(_RETRY_DELAYS) - 1)]
+
+
+async def _login_with_retries():
+    """Log in, riding out a temporary network failure instead of giving up."""
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            await bot.login(TOKEN)
+            return
+        except _TRANSIENT_ERRORS as exc:
+            delay = _retry_delay(attempt)
+            warn(f"Discord login failed ({type(exc).__name__}: {exc}). The panel is still "
+                 f"up; retrying in {delay}s.")
+            await asyncio.sleep(delay)
+
+
+async def _start_bot() -> None:
+    """`bot.run()`, with the login made retryable.
+
+    The retry sits around `login()`, inside the client's own context, rather
+    than around `run()`: `run()` closes the HTTP session on its way out, so a
+    second call dies with "Session is closed", while a login that failed leaves
+    the session perfectly usable. `login()` + `connect()` is exactly what
+    `start()` — and therefore `run()` — does internally.
+    """
+    async with bot:
+        await _login_with_retries()
+
+        try:
+            await bot.connect(reconnect=True)
+        except _TRANSIENT_ERRORS as exc:
+            # `connect` already reconnects on its own, so getting here means it
+            # ran out of road. Nothing in here can fix that.
+            raise SystemExit(
+                f"Discord connection failed ({type(exc).__name__}: {exc}). "
+                f"The panel stays up as long as this process runs."
+            ) from exc
+
+
 if __name__ == "__main__":
     if not TOKEN:
         error("DISCORD_TOKEN is missing. Set it in your .env file.")
@@ -159,8 +228,19 @@ if __name__ == "__main__":
     except Exception as exc:
         warn(f"Dashboard tunnel unavailable: {type(exc).__name__}: {exc}")
 
-    # bot.run() blocks on Discord's event loop and is what keeps this process
+    # _start_bot() blocks on Discord's event loop and is what keeps this process
     # alive. Without it __main__ returns immediately, Python exits, and the
     # daemon Flask thread is torn down with it -- the whole app "shuts down"
     # a second after it prints its startup lines.
-    bot.run(TOKEN)
+    #
+    # `bot.run()` would set the library's logging up for us; driving the same
+    # login/connect pair by hand means doing that one line explicitly.
+    discord.utils.setup_logging()
+    try:
+        asyncio.run(_start_bot())
+    except KeyboardInterrupt:
+        # Same as `Client.run()`: Ctrl+C is a normal way to stop.
+        pass
+    except discord.errors.LoginFailure as exc:
+        error(f"Discord rejected DISCORD_TOKEN ({exc}). Fix it in .env and start again.")
+        raise SystemExit(1)

@@ -1,4 +1,5 @@
 discord.py
+aiohttp
 flask
 psutil
 Pillow>=10.0.0

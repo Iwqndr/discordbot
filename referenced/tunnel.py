@@ -4,19 +4,36 @@
 machine gets a public https:// address that `jamesheston.pages.dev/dashboard`
 can reach.
 
-Two providers, tried in this order unless `TUNNEL_PROVIDER` says otherwise:
+Two providers, in this order unless `TUNNEL_PROVIDER` says otherwise:
 
-* **localtunnel** (default). You pick the subdomain, so the address is the same
-  every restart — `https://<LOCALTUNNEL_SUBDOMAIN>.loca.lt`. Its connection is
-  less durable than cloudflared's and can go zombie (the process lives on while
-  the registration dies), which is what the watchdog below is for.
-* **cloudflared** (fallback). Tried when localtunnel is unavailable, or when
-  `TUNNEL_PROVIDER=cloudflared`. A quick tunnel needs no account and holds its
-  connection better, but the hostname is random on every start.
+* **cloudflared, as a quick tunnel** (preferred). No account, no domain, no
+  token: it asks the edge for a throwaway
+  `https://<random>.trycloudflare.com` address. It is the default because
+  nothing gets between the browser and the panel — the link opens straight
+  away. The address is random and changes on every restart, which only matters
+  for bookmarks: `jamesheston.pages.dev/dashboard` reads whichever address is
+  current and redirects to it.
+* **localtunnel** (fallback). A stable
+  `https://<LOCALTUNNEL_SUBDOMAIN>.loca.lt` address, retried
+  `LOCALTUNNEL_ATTEMPTS` times because its connection fails transiently (it can
+  also go zombie — the process lives on while the registration dies — which is
+  what the watchdog below is for). The catch: the hosted loca.lt service answers
+  *browsers* with an HTTP 511 "Tunnel website ahead!" click-through page before
+  forwarding anything, so it is a fallback rather than the link to share. Only a
+  server-side request that sends `Bypass-Tunnel-Reminder: true` skips that page,
+  which is why the health checks below send one.
 
-The panel is now opened at its own address rather than proxied through the
-domain, so a browser hitting loca.lt directly sees localtunnel's one-time
-"Tunnel website ahead" notice. That is expected.
+Set `TUNNEL_PROVIDER=localtunnel` to prefer the stable loca.lt name anyway, and
+accept that visitors click through loca.lt's notice once per browser.
+
+The token-backed *named* cloudflared tunnel is opt-in
+(`CLOUDFLARE_TUNNEL_MODE=named`): it carries no traffic until its hostname routes
+to it inside the account that owns the token, so it must never be a silent
+default. Whatever the provider, the other one is tried if the first fails.
+
+The panel is opened at its own address rather than proxied through the domain,
+so the browser talks to whichever provider is live; `jamesheston.pages.dev`
+only reads the current address and redirects to it.
 
 Whichever runs, the public address is published to the Supabase `bot_status`
 row with id 'tunnel', and a watchdog polls that address and restarts the client
@@ -28,6 +45,7 @@ local and the bot is unaffected.
 
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -42,11 +60,32 @@ _LOCALTUNNEL_RE = re.compile(r"https://([a-z0-9][a-z0-9-]*)\.loca\.lt", re.I)
 CLOUDFLARED_PATHS = (
     r"C:\Program Files (x86)\cloudflared\cloudflared.exe",
     r"C:\Program Files\cloudflared\cloudflared.exe",
+    r"%LOCALAPPDATA%\Microsoft\WinGet\Links\cloudflared.exe",
+    r"%LOCALAPPDATA%\cloudflared\cloudflared.exe",
+    "~/scoop/shims/cloudflared.exe",
     "/usr/local/bin/cloudflared",
     "/usr/bin/cloudflared",
+    # Linux installs: the .deb uses /usr/bin, snap uses /snap/bin, and a manual
+    # download very often just sits in the home directory. A cloudflared that is
+    # installed but missing from PATH (a service, a systemd unit, a snap-only
+    # shell) is otherwise reported as "not found".
+    "/snap/bin/cloudflared",
+    "/opt/cloudflared/cloudflared",
+    "~/.local/bin/cloudflared",
+    "~/cloudflared",
 )
 
 DEFAULT_SUBDOMAIN = "jamesheston"
+
+# localtunnel keeps the same address across restarts, so it is worth retrying
+# before giving up on a public panel — but it is the fallback provider, because
+# of loca.lt's click-through page.
+LOCALTUNNEL_ATTEMPTS = 3
+LOCALTUNNEL_RETRY_GAP = 5.0
+# npx has to install the package the first time it is asked for, which takes
+# noticeably longer than a restart where the npm cache is already warm.
+LOCALTUNNEL_PATIENCE = 35.0
+LOCALTUNNEL_RETRY_PATIENCE = 18.0
 
 # Health watchdog. A dead tunnel is a visible outage, so two misses 20 seconds
 # apart is enough to act on; waiting longer just means minutes of "Bad gateway".
@@ -160,11 +199,11 @@ def _read_output(process: subprocess.Popen, pattern: re.Pattern, kind: str) -> N
             # one asked for is already taken by another user. Publishing what
             # the client actually says keeps the site pointed at a live tunnel
             # instead of a dead address.
-            wanted = (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
+            wanted = _localtunnel_subdomain()
             if kind == "localtunnel" and f"//{wanted}.loca.lt" not in found:
                 warn(f"Panel tunnel: '{wanted}' was not available, so localtunnel gave "
-                     f"'{found}'. Set LOCALTUNNEL_SUBDOMAIN to something else, or "
-                     f"TUNNEL_PROVIDER=cloudflared, for a stable address.")
+                     f"'{found}'. Set LOCALTUNNEL_SUBDOMAIN to a name nobody else has taken "
+                     f"to get a predictable address back.")
             _publish(found, kind)
 
 
@@ -173,6 +212,15 @@ def _spawn(args: list, kind: str, pattern: re.Pattern):
     global _process, _early_output
     with _lock:
         _early_output = []
+    launch = {}
+    if sys.platform == "win32":
+        launch["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    else:
+        # Its own process group, so `_kill_tree` can signal the whole
+        # `npx` -> `node localtunnel` chain at once instead of leaving the real
+        # client behind holding the subdomain.
+        launch["start_new_session"] = True
+
     try:
         _process = subprocess.Popen(
             args,
@@ -183,7 +231,7 @@ def _spawn(args: list, kind: str, pattern: re.Pattern):
             encoding="utf-8",
             errors="replace",
             bufsize=1,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
+            **launch,
         )
     except Exception as exc:
         warn(f"Panel tunnel could not start ({kind}): {type(exc).__name__}: {exc}")
@@ -202,13 +250,53 @@ def _spawn(args: list, kind: str, pattern: re.Pattern):
 def find_cloudflared() -> str:
     from shutil import which
 
+    # An explicit path always wins, for the installs none of the guesses below
+    # are ever going to match (a downloaded binary, a service account's home).
+    explicit = (os.getenv("CLOUDFLARED_PATH") or "").strip().strip('"').strip("'")
+    if explicit:
+        candidate = os.path.expanduser(os.path.expandvars(explicit))
+        if os.path.isfile(candidate):
+            return candidate
+        found = which(explicit)
+        if found:
+            return found
+        warn(f"Panel tunnel: CLOUDFLARED_PATH={explicit!r} is not a file, continuing the search.")
+
     found = which("cloudflared")
     if found:
         return found
     for path in CLOUDFLARED_PATHS:
+        path = os.path.expanduser(os.path.expandvars(path))
         if os.path.isfile(path):
             return path
     return ""
+
+
+def _dotenv_provider() -> str:
+    """What `TUNNEL_PROVIDER` says in .env, regardless of the live environment.
+
+    `load_dotenv()` never overwrites a variable that is already set, so an old
+    `TUNNEL_PROVIDER` left in the shell, a systemd unit or a wrapper script wins
+    over .env — and "I set it to cloudflared" then quietly runs the other
+    provider. Reading the file lets the log say which one is really in charge.
+    """
+    try:
+        from dotenv import dotenv_values
+    except Exception:
+        return ""
+    path = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
+    )
+    try:
+        if not os.path.isfile(path):
+            return ""
+        return (dotenv_values(path).get("TUNNEL_PROVIDER") or "").strip().lower()
+    except Exception:
+        return ""
+
+
+def _localtunnel_subdomain() -> str:
+    return (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
 
 
 def _npx_command() -> list:
@@ -227,38 +315,136 @@ def _npx_command() -> list:
     return ["npx"]
 
 
-def _start_cloudflared(port: int) -> bool:
+def _use_named_tunnel() -> bool:
+    """Run cloudflared against the token instead of a quick tunnel?
+
+    Only when asked for. A quick tunnel needs no account and no domain, so it is
+    the only mode that can work out of the box; a named one silently produces
+    nothing but the address in .env unless its hostname routes to the tunnel in
+    the account that owns the token. Set `CLOUDFLARE_TUNNEL_MODE=named` to use
+    the token again.
+    """
+    mode = (os.getenv("CLOUDFLARE_TUNNEL_MODE") or "").strip().lower()
+    if mode not in ("named", "token"):
+        return False
+    return bool((os.getenv("CLOUDFLARE_TUNNEL_TOKEN") or "").strip())
+
+
+def _start_cloudflared(port: int, named: bool = False) -> bool:
     binary = find_cloudflared()
     if not binary:
         return False
 
-    token = (os.getenv("CLOUDFLARE_TUNNEL_TOKEN") or "").strip()
-    if token:
-        args = [binary, "tunnel", "--no-autoupdate", "run", "--token", token]
+    args = [binary, "tunnel", "--no-autoupdate"]
+
+    # Quick tunnels reach the edge over QUIC/UDP 7844 by default, which some VPS
+    # networks drop; http2 goes out over 443 and gets through. Set
+    # CLOUDFLARE_TUNNEL_PROTOCOL=http2 when a tunnel connects but never answers.
+    protocol = (os.getenv("CLOUDFLARE_TUNNEL_PROTOCOL") or "").strip().lower()
+    if protocol in ("auto", "http2", "quic"):
+        args += ["--protocol", protocol]
+
+    if named:
+        token = (os.getenv("CLOUDFLARE_TUNNEL_TOKEN") or "").strip()
+        args += ["run", "--token", token]
         fixed = (os.getenv("CLOUDFLARE_TUNNEL_URL") or "").strip().rstrip("/")
         if fixed:
             _publish(fixed, "cloudflared")
     else:
-        args = [binary, "tunnel", "--no-autoupdate", "--url", f"http://localhost:{port}"]
+        # 127.0.0.1 rather than `localhost`: on Linux `localhost` can resolve to
+        # ::1 first, and Flask is bound to IPv4 only, so the tunnel comes up and
+        # then answers 502 for everything.
+        args += ["--url", f"http://127.0.0.1:{port}"]
 
-    if _spawn(args, "cloudflared", _CLOUDFLARED_RE) is None:
-        return False
-    return True
+    return _spawn(args, "cloudflared", _CLOUDFLARED_RE) is not None
 
 
 def _start_localtunnel(port: int) -> bool:
-    name = (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
+    name = _localtunnel_subdomain()
     port_override = (os.getenv("LOCALTUNNEL_PORT") or "").strip()
     target = int(port_override) if port_override.isdigit() else port
 
     args = _npx_command() + ["--yes", "localtunnel", "--port", str(target), "--subdomain", name]
-    if _spawn(args, "localtunnel", _LOCALTUNNEL_RE) is None:
-        return False
 
     # localtunnel's address is known up front, but it is only published after a
     # health check proves the connection actually carries traffic — otherwise a
     # taken subdomain leaves a dead address in Supabase.
     info(f"Panel tunnel: starting https://{name}.loca.lt -> localhost:{target}")
+
+    if _spawn(args, "localtunnel", _LOCALTUNNEL_RE) is None:
+        return False
+    return True
+
+
+def _try_localtunnel(port: int, patience: float = LOCALTUNNEL_PATIENCE) -> bool:
+    """One localtunnel attempt. True once it has produced a live address."""
+    if not _start_localtunnel(port):
+        return False
+
+    if not _wait_for_address(_process, patience):
+        warn("Panel tunnel (localtunnel) produced no address. Output:")
+        for line in list(_early_output)[:6]:
+            warn(f"    {line}")
+        stop()
+        return False
+
+    url = public_url()
+    if not url:
+        # Nothing on stdout, so fall back to the subdomain we asked for.
+        url = f"https://{_localtunnel_subdomain()}.loca.lt"
+        if not _wait_healthy(url, attempts=4):
+            warn(f"Panel tunnel (localtunnel) is not reachable at {url}.")
+            stop()
+            return False
+        _publish(url, "localtunnel")
+
+    if not _wait_healthy(url, attempts=3):
+        # Either the subdomain was taken by someone else or the registration
+        # died on the way up. Counting this as a failed attempt is what lets the
+        # caller retry — and eventually move to cloudflared.
+        warn(f"Panel tunnel (localtunnel) is not carrying traffic at {url}.")
+        stop()
+        return False
+    return True
+
+
+def _try_cloudflared(port: int, named: bool = False) -> bool:
+    """One cloudflared start. True once it has produced a live address."""
+    # A named tunnel's address comes from .env rather than stdout, so there is
+    # nothing to wait for on the output stream.
+    patience = 6.0 if named else 25.0
+
+    if not _start_cloudflared(port, named=named):
+        return False
+
+    if named and not public_url():
+        warn("Panel tunnel: CLOUDFLARE_TUNNEL_TOKEN is set but CLOUDFLARE_TUNNEL_URL is "
+             "not, so the named tunnel has no address to publish.")
+        stop()
+        return False
+
+    if not _wait_for_address(_process, patience):
+        warn("Panel tunnel (cloudflared) produced no address. Output:")
+        for line in list(_early_output)[:6]:
+            warn(f"    {line}")
+        stop()
+        return False
+
+    url = public_url()
+    if url and _wait_healthy(url):
+        return True
+
+    if named:
+        warn(f"Panel tunnel: the named address {url} is not answering. A named tunnel only "
+             f"carries traffic once its hostname routes to it in the account that owns the "
+             f"token — without a domain of your own, use a quick tunnel instead.")
+        stop()
+        return False
+
+    # A quick tunnel prints its address before the edge finishes wiring it up, so
+    # a failed check here is not fatal; the watchdog recovers it.
+    warn("Panel tunnel (cloudflared) came up but is not answering yet; "
+         "publishing it anyway so the watchdog can recover it.")
     return True
 
 
@@ -278,8 +464,67 @@ def _wait_for_address(process, seconds: float) -> bool:
     return process.poll() is None
 
 
+def _localtunnel_with_retries(port: int) -> bool:
+    """localtunnel, retried a few times because it fails transiently.
+
+    The connection can drop during registration, the subdomain can be taken,
+    and `npx` can fail on the first run while it downloads the package — all of
+    which come good on a retry. Only after LOCALTUNNEL_ATTEMPTS of them does the
+    caller give up on it.
+    """
+    attempts = max(1, _env_attempts())
+    for attempt in range(1, attempts + 1):
+        # The first try may have to download the package; later ones cannot.
+        patience = LOCALTUNNEL_PATIENCE if attempt == 1 else LOCALTUNNEL_RETRY_PATIENCE
+        if _try_localtunnel(port, patience):
+            return True
+        if attempt < attempts:
+            warn(f"Panel tunnel: localtunnel attempt {attempt}/{attempts} failed, "
+                 f"retrying in {LOCALTUNNEL_RETRY_GAP:.0f}s…")
+            time.sleep(LOCALTUNNEL_RETRY_GAP)
+    warn(f"Panel tunnel: localtunnel did not come up after {attempts} attempt(s).")
+    return False
+
+
+def _env_attempts() -> int:
+    raw = (os.getenv("LOCALTUNNEL_ATTEMPTS") or "").strip()
+    if not raw.isdigit():
+        return LOCALTUNNEL_ATTEMPTS
+    return _clamp(int(raw), 1, 10)
+
+
+def _clamp(value: int, low: int, high: int) -> int:
+    return max(low, min(high, value))
+
+
+def _cloudflared_with_fallback(port: int) -> bool:
+    """cloudflared: the named tunnel only if asked for, else a quick tunnel."""
+    binary = find_cloudflared()
+    if not binary:
+        warn("Panel tunnel: no cloudflared binary was found, so the public link has to "
+             "come from localtunnel instead. Install cloudflared, or set "
+             "CLOUDFLARED_PATH to the binary.")
+        return False
+    debug(f"Panel tunnel: cloudflared is {binary}")
+
+    if _use_named_tunnel():
+        info("Panel tunnel: starting cloudflared (named tunnel).")
+        if _try_cloudflared(port, named=True):
+            return True
+        warn("Panel tunnel: the named tunnel did not come up; using a quick tunnel instead.")
+
+    info("Panel tunnel: starting cloudflared (quick tunnel).")
+    return _try_cloudflared(port, named=False)
+
+
 def start(port: int) -> bool:
-    """Start the preferred tunnel to `http://localhost:<port>`."""
+    """Start the preferred tunnel to `http://localhost:<port>`.
+
+    A cloudflared quick tunnel first, so the address a browser opens is the
+    panel itself with nothing in front of it; localtunnel second, because its
+    stable address is worth falling back to even though loca.lt makes visitors
+    click through a notice page.
+    """
     if os.getenv("DASHBOARD_TUNNEL", "1").strip().lower() in ("0", "false", "off", "no"):
         info("Panel tunnel: disabled (DASHBOARD_TUNNEL=0)")
         return False
@@ -291,63 +536,58 @@ def start(port: int) -> bool:
         return True
 
     wanted = (os.getenv("TUNNEL_PROVIDER") or "").strip().lower()
-    order = ["localtunnel", "cloudflared"]
+
+    # Say which setting won. "I set TUNNEL_PROVIDER=cloudflared and it still ran
+    # localtunnel" is almost always .env losing to an environment variable that
+    # was exported earlier, or .env never being loaded at all.
+    from_file = _dotenv_provider()
+    if from_file and from_file != wanted:
+        if wanted:
+            warn(f"Panel tunnel: the environment sets TUNNEL_PROVIDER={wanted}, so .env's "
+                 f"{from_file} is ignored — an already-set variable is never overwritten by "
+                 f".env. Clear it to let .env decide.")
+        else:
+            warn(f"Panel tunnel: .env sets TUNNEL_PROVIDER={from_file}, but it did not reach "
+                 f"the process, so the default order is being used. Start the bot from the "
+                 f"repository root so its .env is loaded.")
     if wanted in ("cloudflared", "localtunnel"):
-        order = [wanted]
+        info(f"Panel tunnel: TUNNEL_PROVIDER={wanted} (trying {wanted} first).")
+
+    # cloudflared first: a quick tunnel is the one whose address a browser opens
+    # directly, because loca.lt intercepts browsers with its own notice page.
+    order = ["cloudflared", "localtunnel"]
+    if wanted == "localtunnel":
+        order = ["localtunnel", "cloudflared"]
+        info("Panel tunnel: TUNNEL_PROVIDER=localtunnel, so the address stays "
+             "https://<name>.loca.lt — visitors then click through loca.lt's "
+             "\"Tunnel website ahead\" page before the panel loads.")
+    elif wanted and wanted != "cloudflared":
+        warn(f"Panel tunnel: TUNNEL_PROVIDER={wanted!r} is not a provider, "
+             f"using the default order.")
 
     # Clear any client left over from a previous run before starting a new one,
     # so exactly one tunnel is ever alive and the published address belongs to
     # the process we are about to watch.
     kill_orphans()
 
+    started = False
     for kind in order:
-        if kind == "cloudflared":
-            if not find_cloudflared():
-                warn("Panel tunnel: cloudflared not found, trying localtunnel instead.")
-                continue
-            info("Panel tunnel: starting cloudflared (quick tunnel).")
-            ok = _start_cloudflared(port)
-            patience = 25.0
-            # A named tunnel has a fixed public address, so there is nothing to
-            # wait for on stdout.
-            if (os.getenv("CLOUDFLARE_TUNNEL_TOKEN") or "").strip():
-                patience = 6.0
+        if kind == "localtunnel":
+            started = _localtunnel_with_retries(port)
         else:
-            ok = _start_localtunnel(port)
-            patience = 20.0
+            started = _cloudflared_with_fallback(port)
+        if started:
+            break
 
-        if not ok:
-            continue
+    if not started:
+        warn("Panel tunnel could not be established. The panel is local only.")
+        return False
 
-        if not _wait_for_address(_process, patience):
-            warn(f"Panel tunnel ({kind}) produced no address. Output:")
-            for line in list(_early_output)[:6]:
-                warn(f"    {line}")
-            stop()
-            continue
-
-        if not public_url():
-            # localtunnel: publish only once it is proven reachable.
-            name = (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
-            candidate = f"https://{name}.loca.lt"
-            if _wait_healthy(candidate):
-                _publish(candidate, "localtunnel")
-            else:
-                warn("Panel tunnel (localtunnel) is not reachable yet; not publishing its address.")
-                stop()
-                continue
-        elif kind == "cloudflared" and not _wait_healthy(public_url()):
-            warn("Panel tunnel (cloudflared) came up but is not answering yet; "
-                 "publishing it anyway so the watchdog can recover it.")
-
-        global _health_thread
-        if _health_thread is None or not _health_thread.is_alive():
-            _health_thread = threading.Thread(target=_health_loop, args=(port,), daemon=True)
-            _health_thread.start()
-        return True
-
-    warn("Panel tunnel could not be established. The panel is local only.")
-    return False
+    global _health_thread
+    if _health_thread is None or not _health_thread.is_alive():
+        _health_thread = threading.Thread(target=_health_loop, args=(port,), daemon=True)
+        _health_thread.start()
+    return True
 
 
 def _watch(process: subprocess.Popen) -> None:
@@ -473,14 +713,26 @@ def _kill_tree(process: subprocess.Popen) -> None:
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         else:
-            process.terminate()
+            # `npx localtunnel` is a wrapper around a `node` child; signalling
+            # only the wrapper leaves the client running and still holding the
+            # subdomain, which is how one restart ends up with two tunnels.
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            except OSError:
+                process.terminate()
     except Exception:
         pass
     try:
         process.wait(timeout=5)
     except Exception:
         try:
-            process.kill()
+            if sys.platform == "win32":
+                process.kill()
+            else:
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                except OSError:
+                    process.kill()
         except Exception:
             pass
 
