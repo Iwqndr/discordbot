@@ -6268,7 +6268,11 @@ async function loadDirectory(force) {
         const extra = byId[String(row.user_id)];
         if (extra) {
           if (!row.bio) row.bio = extra.bio || "";
-          row.banner_url = extra.banner_url || "";
+          // Only ever filled in, never blanked: the primary source is allowed to
+          // carry a banner of its own, and the synced table is not the only place
+          // one can come from.
+          if (extra.banner_url) row.banner_url = extra.banner_url;
+          else if (!row.banner_url) row.banner_url = "";
           const tiers = {};
           (extra.roles || []).forEach(r => { tiers[r.name] = r.tier; });
           (row.roles || []).forEach(r => {

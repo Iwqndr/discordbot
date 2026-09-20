@@ -23,7 +23,7 @@ async function handleGet({ request, env }) {
   const [memberRes, casesRes, ticketRes] = await Promise.all([
     supa(
       env,
-      `members?user_id=eq.${enc}&select=user_id,username,display_name,avatar_url,joined_at,created_at,roles&limit=1`
+      `members?user_id=eq.${enc}&select=user_id,username,display_name,avatar_url,banner_url,joined_at,created_at,roles&limit=1`
     ),
     supa(
       env,
@@ -52,6 +52,9 @@ async function handleGet({ request, env }) {
     user_id: uid,
     display_name: member?.display_name || member?.username || "Member",
     avatar_url: member?.avatar_url || "",
+    // Same picture the member's profile hero shows, so "My dashboard" does not
+    // fall back to a tinted banner for somebody who has one.
+    banner_url: member?.banner_url || "",
     joined_at: member?.joined_at || null,
     account_created: member?.created_at || null,
     // The bot's ban list lives behind the service key, so this page does not

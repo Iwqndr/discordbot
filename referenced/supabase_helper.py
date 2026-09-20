@@ -84,6 +84,46 @@ def fetch_member(user_id):
         return None
 
 
+def fetch_stored_banners():
+    """`{user_id: banner_url}` for every member that has a banner stored.
+
+    Read before a member row is written, because Discord only returns a banner for
+    accounts with Nitro: without this, the empty value it gives for everybody else
+    would overwrite a banner somebody set by hand every time they were synced.
+    """
+    out = {}
+    offset = 0
+    while offset < 100000:
+        try:
+            status, raw = _request(
+                "GET",
+                "members?select=user_id,banner_url&banner_url=not.is.null"
+                f"&limit=1000&offset={offset}",
+                use_service=True,
+            )
+        except Exception:
+            # Not configured, DNS, TLS: a caller only wants the banners it can get,
+            # and a push must not fail because this lookup did.
+            return out
+        if status != 200:
+            return out
+        try:
+            rows = json.loads(raw)
+        except Exception:
+            return out
+        if not rows:
+            break
+        for row in rows:
+            uid = str(row.get("user_id") or "")
+            banner = str(row.get("banner_url") or "").strip()
+            if uid and banner:
+                out[uid] = banner
+        if len(rows) < 1000:
+            break
+        offset += 1000
+    return out
+
+
 def fetch_all_member_ids():
     status, raw = _request("GET", "members?select=user_id", use_service=True)
     if status != 200:

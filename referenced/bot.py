@@ -58,6 +58,8 @@ from supabase_helper import (
     upsert_members,
     delete_member,
     fetch_all_member_ids,
+    fetch_member,
+    fetch_stored_banners,
 )
 
 TOKEN = DISCORD_TOKEN
@@ -173,7 +175,7 @@ async def staff_only_gate(ctx: commands.Context):
     return any(getattr(perms, p, False) for p in STAFF_PERMS)
 
 
-async def _build_member_row(member: discord.Member) -> dict:
+async def _build_member_row(member: discord.Member, keep_banner: str = "") -> dict:
     # Every role the member actually wears, highest first, so the site can show
     # what somebody really has. The tier is only decorative: known staff roles
     # keep their configured rank, anything else sorts below them, and @everyone
@@ -199,6 +201,11 @@ async def _build_member_row(member: discord.Member) -> dict:
             banner_url = user.banner.url
     except Exception:
         pass
+    if not banner_url:
+        # Discord only hands out a banner to accounts with Nitro, so for everybody
+        # else this column is the only place a banner can live — and a picture
+        # somebody set by hand must not vanish the next time their nickname changes.
+        banner_url = str(keep_banner or "").strip()
 
     bio = ""
     if member.premium_since:
@@ -235,7 +242,10 @@ async def _push_member_to_supabase(member: discord.Member):
     if member.bot:
         return
     try:
-        row = await _build_member_row(member)
+        # Whatever banner is stored wins when Discord has none to offer, so a
+        # hand-set one survives a nickname, role or avatar change.
+        stored = fetch_member(member.id) or {}
+        row = await _build_member_row(member, stored.get("banner_url"))
         upsert_members([row])
     except Exception as e:
         warn(f"Supabase member sync failed for {member.id}: {e}")
@@ -293,11 +303,16 @@ async def syncmembers(ctx: commands.Context):
     msg = await ctx.send("> Syncing members to Supabase. This may take a moment...")
 
     current_members = {}
+    # One read for the whole guild rather than one per member: the stored banners
+    # are needed because Discord returns none for anybody without Nitro.
+    stored_banners = fetch_stored_banners()
     async with ctx.typing():
         for member in ctx.guild.members:
             if member.bot:
                 continue
-            current_members[str(member.id)] = await _build_member_row(member)
+            current_members[str(member.id)] = await _build_member_row(
+                member, stored_banners.get(str(member.id))
+            )
 
     existing_ids = fetch_all_member_ids()
     current_ids = set(current_members.keys())

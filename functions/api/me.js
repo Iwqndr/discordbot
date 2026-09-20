@@ -51,8 +51,11 @@ async function handleGet({ request, env }) {
         username: row.username || "",
         display_name: row.display_name || row.username || "",
         avatar_url: row.avatar_url || "",
+        // Already selected above, and the profile hero paints it — dropping it
+        // here is why the member's own page fell back to a tinted banner.
+        banner_url: row.banner_url || "",
       }
-    : { user_id: uid, username: "", display_name: "Member", avatar_url: "" };
+    : { user_id: uid, username: "", display_name: "Member", avatar_url: "", banner_url: "" };
 
   const staffTitle = titleForRoles(titleRes.rows || [], row?.roles || []);
 

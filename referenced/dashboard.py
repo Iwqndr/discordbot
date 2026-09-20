@@ -64,7 +64,7 @@ from antiraid import (
     is_media_only,
     is_selfpromo_channel,
 )
-from supabase_helper import fetch_member
+from supabase_helper import fetch_member, fetch_stored_banners
 from config import (
     TICKET_CHANNEL_ID,
     TICKET_PING_ROLE_ID,
@@ -2295,6 +2295,14 @@ def api_guild_members(guild_id):
     # The staff badges the owner designed, so the member list wears the same
     # tags the member page does.
     titles = _load_titles()
+    # One read for the whole list. Discord returns no banner without Nitro, and the
+    # stored one is what the member's own page shows, so the rows carry it too and
+    # the profile paints the real picture instantly instead of settling a moment
+    # later. A project without Supabase configured just gets no banners.
+    try:
+        banners = fetch_stored_banners()
+    except Exception:
+        banners = {}
     for member in guild.members[:MEMBER_LIST_CAP]:
         risk_score, risk_flags = account_risk_score(member)
         top = member.top_role
@@ -2307,6 +2315,7 @@ def api_guild_members(guild_id):
             "staff_title": _member_title([str(r.id) for r in member_roles],
                                          [r.name for r in member_roles], titles=titles),
             "avatar": member.display_avatar.url if member.display_avatar else "",
+            "banner_url": banners.get(str(member.id), ""),
             "bot": member.bot,
             "joined_at": member.joined_at.isoformat() if member.joined_at else None,
             "created_at": member.created_at.isoformat() if member.created_at else None,
@@ -2351,6 +2360,7 @@ def api_member_profile(guild_id, user_id):
 
     tracked = history_tracker.get(guild.id, uid)
     score, reasons = account_risk_score(member) if member else (0, [])
+    banner = _member_banner(uid, user)
 
     profile = {
         "id": str(uid),
@@ -2359,7 +2369,10 @@ def api_member_profile(guild_id, user_id):
         "display_name": (member.display_name if member else (user.name if user else f"ID {uid}")),
         "mention": member.mention if member else f"<@{uid}>",
         "avatar": user.display_avatar.url if user and user.display_avatar else "",
-        "banner": user.banner.url if user and user.banner else "",
+        # Sent under both names the panel knows: the profile modal accepts either,
+        # and a member row that carries `banner_url` keeps them interchangeable.
+        "banner": banner,
+        "banner_url": banner,
         "bot": bool(user.bot) if user else False,
         "created_at": user.created_at.isoformat() if user else None,
         "account_age_days": (discord.utils.utcnow() - user.created_at).days if user else None,
@@ -5460,6 +5473,25 @@ def _supabase_member(user_id):
         return fetch_member(str(user_id)) or None
     except Exception:
         return None
+
+
+def _member_banner(user_id, user=None):
+    """The banner to show for a member: the stored one, else Discord's.
+
+    Discord only carries a banner on accounts with Nitro, so `user.banner` is
+    empty for almost everybody and the panel showed its own gradient instead of
+    the picture the member sees on their own page. The stored column is also
+    where the member page reads from, and where a banner set by hand lives — the
+    only way to have one without Nitro — so it leads here too and the two views
+    agree on the same image.
+    """
+    stored = str((_supabase_member(user_id) or {}).get("banner_url") or "").strip()
+    if stored:
+        return stored
+    try:
+        return user.banner.url if user is not None and user.banner else ""
+    except Exception:
+        return ""
 
 
 def _roles_of_member(user_id):
