@@ -46,10 +46,12 @@ local and the bot is unaffected.
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 
 from console import debug, error, info, warn
 
@@ -96,6 +98,10 @@ HEALTH_MAX_RESTARTS = 20
 _process = None
 _public_url = None
 _provider = None
+# Set to "http2" once a quick tunnel has come up silent, so later restarts start
+# there instead of re-discovering the same dead UDP path (and rotating through
+# yet another address).
+_prefer_protocol = ""
 _lock = threading.Lock()
 _early_output: list = []
 _restarts = 0
@@ -330,19 +336,25 @@ def _use_named_tunnel() -> bool:
     return bool((os.getenv("CLOUDFLARE_TUNNEL_TOKEN") or "").strip())
 
 
-def _start_cloudflared(port: int, named: bool = False) -> bool:
+def _forced_protocol() -> str:
+    """`CLOUDFLARE_TUNNEL_PROTOCOL`, when the operator has picked one."""
+    chosen = (os.getenv("CLOUDFLARE_TUNNEL_PROTOCOL") or "").strip().lower()
+    return chosen if chosen in ("auto", "http2", "quic") else ""
+
+
+def _start_cloudflared(port: int, named: bool = False, protocol: str = "") -> bool:
     binary = find_cloudflared()
     if not binary:
         return False
 
     args = [binary, "tunnel", "--no-autoupdate"]
 
-    # Quick tunnels reach the edge over QUIC/UDP 7844 by default, which some VPS
-    # networks drop; http2 goes out over 443 and gets through. Set
-    # CLOUDFLARE_TUNNEL_PROTOCOL=http2 when a tunnel connects but never answers.
-    protocol = (os.getenv("CLOUDFLARE_TUNNEL_PROTOCOL") or "").strip().lower()
-    if protocol in ("auto", "http2", "quic"):
-        args += ["--protocol", protocol]
+    # Quick tunnels reach the edge over QUIC/UDP 7844 by default. A VPS often
+    # lets the handshake through and then drops the packets that follow, so
+    # http2 — which goes out over 443 — is tried when that happens.
+    chosen = (protocol or _forced_protocol()).strip().lower()
+    if chosen in ("auto", "http2", "quic"):
+        args += ["--protocol", chosen]
 
     if named:
         token = (os.getenv("CLOUDFLARE_TUNNEL_TOKEN") or "").strip()
@@ -408,44 +420,83 @@ def _try_localtunnel(port: int, patience: float = LOCALTUNNEL_PATIENCE) -> bool:
     return True
 
 
-def _try_cloudflared(port: int, named: bool = False) -> bool:
-    """One cloudflared start. True once it has produced a live address."""
+def _try_cloudflared(port: int, named: bool = False, protocol: str = "") -> str:
+    """One cloudflared start.
+
+    Returns "live" (an address that carries traffic), "silent" (an address that
+    answers nothing) or "failed" (no address at all). The caller decides what a
+    "silent" quick tunnel is worth, because "publish it and let the watchdog
+    retry" and "retry right now over HTTP/2" are different answers.
+    """
     # A named tunnel's address comes from .env rather than stdout, so there is
     # nothing to wait for on the output stream.
     patience = 6.0 if named else 25.0
 
-    if not _start_cloudflared(port, named=named):
-        return False
+    if not _start_cloudflared(port, named=named, protocol=protocol):
+        return "failed"
 
     if named and not public_url():
         warn("Panel tunnel: CLOUDFLARE_TUNNEL_TOKEN is set but CLOUDFLARE_TUNNEL_URL is "
              "not, so the named tunnel has no address to publish.")
         stop()
-        return False
+        return "failed"
 
     if not _wait_for_address(_process, patience):
         warn("Panel tunnel (cloudflared) produced no address. Output:")
         for line in list(_early_output)[:6]:
             warn(f"    {line}")
         stop()
-        return False
+        return "failed"
 
     url = public_url()
     if url and _wait_healthy(url):
-        return True
+        return "live"
 
     if named:
         warn(f"Panel tunnel: the named address {url} is not answering. A named tunnel only "
              f"carries traffic once its hostname routes to it in the account that owns the "
              f"token — without a domain of your own, use a quick tunnel instead.")
         stop()
-        return False
+        return "failed"
 
-    # A quick tunnel prints its address before the edge finishes wiring it up, so
-    # a failed check here is not fatal; the watchdog recovers it.
-    warn("Panel tunnel (cloudflared) came up but is not answering yet; "
-         "publishing it anyway so the watchdog can recover it.")
-    return True
+    return "silent"
+
+
+def _try_quick_tunnel(port: int) -> str:
+    """A quick tunnel, retried once over HTTP/2 when its UDP path is dead.
+
+    The failure this exists for looks maddening from the outside: cloudflared
+    prints an address, the edge accepts the tunnel, and *nothing* that travels
+    through it ever arrives. On a VPS that is usually QUIC/UDP 7844 being
+    dropped after the handshake (Oracle Cloud and friends drop it in various
+    places), which HTTP/2 avoids by going out over 443.
+
+    So before trusting a silent quick tunnel, the panel is checked locally: if
+    the panel itself is down there is nothing to forward and no protocol will
+    save it, and the message should say so rather than blaming the tunnel.
+    """
+    global _prefer_protocol
+
+    status = _try_cloudflared(port, named=False, protocol=_prefer_protocol)
+    if status != "silent" or _forced_protocol() or _prefer_protocol == "http2":
+        return status
+
+    if not _healthy(f"http://127.0.0.1:{port}", timeout=5):
+        warn(f"Panel tunnel: the panel is not answering on http://127.0.0.1:{port}, so the "
+             f"tunnel has nothing to forward. Fix the Flask error above, not the tunnel.")
+        return status
+
+    if not public_url() or not _resolves(public_url()):
+        warn(f"Panel tunnel: {public_url() or 'the address'} does not even resolve from "
+             f"this machine, which can be its DNS caching the miss rather than the tunnel.")
+
+    _prefer_protocol = "http2"
+    warn("Panel tunnel: the quick tunnel is up but carrying no traffic, while the panel "
+         "answers locally — retrying over HTTP/2 (a VPS commonly drops cloudflared's "
+         "QUIC/UDP 7844 traffic after the handshake).")
+    stop()
+    info("Panel tunnel: starting cloudflared (quick tunnel, http2).")
+    return _try_cloudflared(port, named=False, protocol="http2")
 
 
 # ---------------------------------------------------------------------------
@@ -509,12 +560,22 @@ def _cloudflared_with_fallback(port: int) -> bool:
 
     if _use_named_tunnel():
         info("Panel tunnel: starting cloudflared (named tunnel).")
-        if _try_cloudflared(port, named=True):
+        if _try_cloudflared(port, named=True) == "live":
             return True
         warn("Panel tunnel: the named tunnel did not come up; using a quick tunnel instead.")
 
     info("Panel tunnel: starting cloudflared (quick tunnel).")
-    return _try_cloudflared(port, named=False)
+    status = _try_quick_tunnel(port)
+
+    if status == "live":
+        return True
+    if status == "silent":
+        # The address is real and the edge knows it, so it is still worth
+        # publishing: the watchdog keeps poking it and restarts the client.
+        warn("Panel tunnel (cloudflared) came up but is not answering yet; "
+             "publishing it anyway so the watchdog can recover it.")
+        return True
+    return False
 
 
 def start(port: int) -> bool:
@@ -615,6 +676,23 @@ def _healthy(url: str, timeout: int = 15) -> bool:
         )
         with urllib.request.urlopen(req, timeout=timeout) as res:
             return res.status < 500
+    except Exception:
+        return False
+
+
+def _resolves(url: str) -> bool:
+    """Does this address resolve at all from here?
+
+    A quick tunnel's hostname takes a moment to appear in DNS, and a resolver
+    that has already cached the miss keeps answering NXDOMAIN — so "the tunnel
+    answers nothing" is sometimes "this machine cannot look the address up yet".
+    The two want different fixes, so the log says which one it is.
+    """
+    host = urllib.parse.urlsplit(url or "").hostname or ""
+    if not host:
+        return False
+    try:
+        return bool(socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM))
     except Exception:
         return False
 

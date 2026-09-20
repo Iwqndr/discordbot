@@ -162,46 +162,94 @@ _TRANSIENT_ERRORS = (
 _RETRY_DELAYS = (5, 15, 30, 60, 120, 300)
 
 
+def start_tunnel() -> None:
+    """Bring the panel's public tunnel up, on its own thread.
+
+    `tunnel.start()` can spend twenty seconds proving that the address it just
+    printed actually carries traffic, and none of that is Discord's business:
+    blocking the main thread there delayed login (and a failed tunnel delayed it
+    by longer still). Best-effort either way — if it fails, the panel simply
+    stays reachable on this machine.
+    """
+    try:
+        import tunnel
+
+        tunnel.start(DASHBOARD_PORT)
+    except Exception as exc:
+        warn(f"Dashboard tunnel unavailable: {type(exc).__name__}: {exc}")
+
+
 def _retry_delay(attempt: int) -> int:
     return _RETRY_DELAYS[min(max(attempt, 1) - 1, len(_RETRY_DELAYS) - 1)]
 
 
-async def _login_with_retries():
-    """Log in, riding out a temporary network failure instead of giving up."""
+def _describe(exc: BaseException) -> str:
+    """`TypeName: message`, without letting a broken `__str__` escape.
+
+    Formatting an exception can itself raise (an aiohttp connector error built
+    without a connection key blows up in its own `__str__`), and a crash while
+    reporting a crash would take the panel down with it.
+    """
+    try:
+        return f"{type(exc).__name__}: {exc}"
+    except Exception:
+        return type(exc).__name__
+
+
+async def _retry_bot_call(what: str, func, *args, **kwargs) -> None:
+    """Run a Discord call, riding out the failures worth retrying.
+
+    `login()` and `connect()` are the two calls that run before anything is
+    working, and both fail transiently here: a TLS handshake to Discord answers
+    "handshake failure" some of the time on this network.
+
+    The AttributeError case is discord.py's own hole. When the *first* websocket
+    connection fails, its resume path still reads `self.ws.sequence` — and
+    `self.ws` is None, because no connection was ever established — so one failed
+    handshake ends the process with "NoneType has no attribute 'sequence'". That
+    exact case is retried instead; any other AttributeError is a real bug and is
+    raised.
+    """
     attempt = 0
     while True:
         attempt += 1
         try:
-            await bot.login(TOKEN)
+            await func(*args, **kwargs)
             return
         except _TRANSIENT_ERRORS as exc:
-            delay = _retry_delay(attempt)
-            warn(f"Discord login failed ({type(exc).__name__}: {exc}). The panel is still "
-                 f"up; retrying in {delay}s.")
-            await asyncio.sleep(delay)
+            reason = _describe(exc)
+        except AttributeError as exc:
+            reason = _describe(exc)
+            if bot.ws is not None or "sequence" not in reason:
+                raise
+            reason = f"discord.py's first-connection bug ({reason})"
+
+        delay = _retry_delay(attempt)
+        warn(f"Discord {what} failed ({reason}). The panel is still up; retrying in {delay}s.")
+        await asyncio.sleep(delay)
 
 
 async def _start_bot() -> None:
-    """`bot.run()`, with the login made retryable.
+    """`bot.run()`, with the two startup calls made retryable.
 
-    The retry sits around `login()`, inside the client's own context, rather
-    than around `run()`: `run()` closes the HTTP session on its way out, so a
-    second call dies with "Session is closed", while a login that failed leaves
-    the session perfectly usable. `login()` + `connect()` is exactly what
-    `start()` — and therefore `run()` — does internally.
+    The retry sits inside the client's own context, rather than around `run()`:
+    `run()` closes the HTTP session on its way out, so a second call dies with
+    "Session is closed", while a call that failed leaves the session perfectly
+    usable. `login()` + `connect()` is exactly what `start()` — and therefore
+    `run()` — does internally.
     """
     async with bot:
-        await _login_with_retries()
+        await _retry_bot_call("login", bot.login, TOKEN)
+        await _retry_bot_call("gateway connection", bot.connect, reconnect=True)
 
-        try:
-            await bot.connect(reconnect=True)
-        except _TRANSIENT_ERRORS as exc:
-            # `connect` already reconnects on its own, so getting here means it
-            # ran out of road. Nothing in here can fix that.
-            raise SystemExit(
-                f"Discord connection failed ({type(exc).__name__}: {exc}). "
-                f"The panel stays up as long as this process runs."
-            ) from exc
+        if bot.is_closed():
+            # discord.py closes the client on its way out of a connection it
+            # treats as fatal, and a connect() on a closed client returns
+            # immediately — so this would otherwise look like a clean shutdown
+            # and take the panel down without a word.
+            error("Discord closed the connection and the client with it, so this run cannot "
+                  "continue. Start the bot again — the panel is local only until then.")
+            raise SystemExit(75)
 
 
 if __name__ == "__main__":
@@ -219,14 +267,9 @@ if __name__ == "__main__":
     info(f"GitHub pusher: http://{local_ip}:{DASHBOARD_PORT}/git")
 
     # Give the panel a public address so jamesheston.pages.dev/dashboard can
-    # redirect to it. Best-effort: a failure here only means the panel stays
-    # reachable on this machine.
-    try:
-        import tunnel
-
-        tunnel.start(DASHBOARD_PORT)
-    except Exception as exc:
-        warn(f"Dashboard tunnel unavailable: {type(exc).__name__}: {exc}")
+    # redirect to it. On its own thread, so the bot logs in immediately instead
+    # of waiting on the tunnel's health check.
+    threading.Thread(target=start_tunnel, daemon=True).start()
 
     # _start_bot() blocks on Discord's event loop and is what keeps this process
     # alive. Without it __main__ returns immediately, Python exits, and the
