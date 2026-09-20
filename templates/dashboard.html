@@ -377,72 +377,179 @@
   }
   .role-stat b { font-family: 'Fredoka', sans-serif; font-size: 20px; font-weight: 700; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .role-stat .m { font-size: 10.5px; font-weight: 600; color: var(--muted); }
-  .role-order-card { margin-top: 16px; padding: 16px 18px 18px; }
-  .role-order-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
-  .role-order-search { max-width: 240px; }
-  .role-order-list { display: flex; flex-direction: column; gap: 5px; max-height: 60vh; overflow-y: auto; padding-right: 4px; }
+  /* ROLE ORDER LADDER — see the header comment in renderRolePreview for the
+     markup this styles. */
+  .role-order-card { margin-top: 16px; padding: 18px 20px 16px; overflow: hidden; }
+  .role-order-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .role-order-search { max-width: 260px; }
+  /* THE LADDER.
+     One row is one rail (a segment of the spine) plus one card (the role).
+     The rail spans the row's whole height, so the line runs unbroken through
+     the gaps between cards and the ranking reads as a single object instead of
+     a stack of loose pills. Each segment is painted in its own role's colour
+     and blended into its neighbours', so the spine shades from the top role
+     down to @everyone. */
+  .role-order-list {
+    display: flex; flex-direction: column;
+    max-height: 62vh; overflow-y: auto; overscroll-behavior: contain;
+    padding: 2px 6px 2px 0; scrollbar-gutter: stable;
+  }
   .ro-row {
-    gap: 11px; padding: 10px 13px; border-radius: 13px; border: 2px solid transparent;
-    position: relative; overflow: hidden;
-    background: var(--bg); animation: roIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
-    animation-delay: calc(var(--i, 0) * 22ms);
+    position: relative; display: flex; align-items: stretch; width: 100%;
+    padding: 3px 0; border: 0; background: none; text-align: left; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: var(--text);
+    animation: roIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 18ms);
+  }
+  .ro-rail { position: relative; flex: none; width: 42px; }
+  .ro-rail::before {
+    content: ''; position: absolute; left: 20px; top: 0; bottom: 0; width: 2px; border-radius: 2px;
+    background: linear-gradient(to bottom,
+      var(--rc-up, var(--rc, var(--border))) 0%, var(--rc, var(--border)) 42%,
+      var(--rc, var(--border)) 58%, var(--rc-down, var(--rc, var(--border))) 100%);
+    opacity: 0.55; transition: opacity 0.18s ease;
+  }
+  .ro-node {
+    position: absolute; left: 13px; top: 50%; width: 16px; height: 16px; margin-top: -8px;
+    border-radius: 50%; background: var(--rc, var(--muted));
+    box-shadow: 0 0 0 3px var(--card), inset 0 0 0 1.5px rgb(255 255 255 / 0.25);
+    transition: transform 0.18s var(--ease), box-shadow 0.18s ease;
+  }
+  .ro-card {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px;
+    padding: 9px 14px 9px 12px; border-radius: 14px; border: 2px solid transparent;
+    background: color-mix(in srgb, var(--rc, var(--border)) 11%, var(--bg));
     transition: transform 0.18s var(--ease), border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
   }
-  /* The role's own colour, as a hairline down the left edge — the fastest way
-     to read the ladder without matching names to dots. */
-  .ro-row::before {
-    content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;
-    border-radius: 0 3px 3px 0; background: var(--rc, var(--border)); opacity: 0.85;
-    transition: opacity 0.18s ease, top 0.18s ease, bottom 0.18s ease;
+  .ro-row:hover .ro-card {
+    border-color: color-mix(in srgb, var(--rc, var(--border)) 55%, var(--border));
+    background: color-mix(in srgb, var(--rc, var(--border)) 20%, var(--bg));
+    transform: translateX(3px);
+    box-shadow: 0 10px 22px -16px color-mix(in srgb, var(--rc, var(--border)) 70%, #000);
   }
-  .ro-row:hover { transform: translateX(3px); border-color: var(--accent-dark); box-shadow: 0 6px 18px -12px var(--rc, transparent); }
-  .ro-row:hover::before { opacity: 1; top: 4px; bottom: 4px; }
-  .ro-row.ro-locked { opacity: 0.62; background: transparent; border-style: dashed; }
-  .ro-row.ro-locked::before { opacity: 0.35; }
-  .ro-row.ro-locked:hover { transform: none; border-color: var(--border); box-shadow: none; }
-  /* Your own highest role: the line you cannot step over. */
-  .ro-row.ro-mine { border-color: var(--accent-dark); background: color-mix(in srgb, var(--accent-dark) 10%, var(--bg)); }
-  .ro-row.ro-mine.ro-locked { opacity: 1; }
+  .ro-row:hover .ro-rail::before { opacity: 0.8; }
+  .ro-row:hover .ro-node { transform: scale(1.18); }
+  .ro-row:focus-visible { outline: none; }
+  .ro-row:focus-visible .ro-card { border-color: var(--accent-dark); box-shadow: 0 0 0 3px var(--accent-soft); }
+  /* At or above your own role: still readable — dimming the whole row is what
+     made the names hard to read — but plainly inert. */
+  .ro-row.ro-locked { cursor: not-allowed; }
+  .ro-row.ro-locked .ro-card {
+    background: color-mix(in srgb, var(--rc, var(--border)) 3%, var(--bg));
+    border-style: dashed; border-color: var(--border-soft);
+  }
+  /* Softer than an open row, but still AA — dimming the text is what made these
+     names hard to read, and `--muted` alone only reaches about 4:1 on a tint. */
+  .ro-row.ro-locked .ro-name > b { color: color-mix(in srgb, var(--text) 82%, var(--muted)); font-weight: 600; }
+  .ro-row.ro-locked .ro-rail::before { opacity: 0.22; }
+  .ro-row.ro-locked .ro-node { opacity: 0.65; }
+  .ro-row.ro-locked:hover .ro-card { transform: none; border-color: var(--border-soft); box-shadow: none; }
+  .ro-row.ro-locked:hover .ro-node { transform: none; }
+  /* Your own highest role — the line you cannot step over. */
+  .ro-row.ro-mine .ro-card { border-color: var(--accent-dark); background: color-mix(in srgb, var(--rc, var(--accent-dark)) 14%, var(--bg)); }
+  .ro-row.ro-mine .ro-node { box-shadow: 0 0 0 3px var(--card), 0 0 0 5px color-mix(in srgb, var(--accent-dark) 65%, transparent); }
   .ro-pos {
-    flex: none; min-width: 30px; text-align: center; font-size: 10.5px; font-weight: 700;
+    flex: none; min-width: 38px; text-align: center; font-size: 11px; font-weight: 800;
     color: var(--muted); background: var(--card); border: 1.5px solid var(--border-soft);
-    border-radius: 8px; padding: 2px 5px;
+    border-radius: 9px; padding: 3px 6px;
   }
+  .ro-pos::before { content: '#'; opacity: 0.45; }
   .ro-face {
-    flex: none; width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
-    background: var(--rc, var(--muted)); box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.18); overflow: hidden;
+    flex: none; width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center;
+    background: var(--rc, var(--muted)); color: var(--face-ink, #fff);
+    font-size: 12px; font-weight: 800; letter-spacing: 0.02em;
+    box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.22), 0 2px 6px -3px rgb(0 0 0 / 0.4);
+    overflow: hidden;
   }
   .ro-face img { width: 100%; height: 100%; object-fit: cover; }
-  .ro-name {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
-    font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
+  .ro-name { flex: 1 1 auto; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 7px; }
+  .ro-name > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ro-tag {
-    font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+    flex: none; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--muted); border: 1.5px solid var(--border-soft); border-radius: 999px; padding: 1px 7px;
   }
   .ro-tag.ro-you { color: var(--accent-dark); border-color: var(--accent-dark); background: color-mix(in srgb, var(--accent-dark) 12%, transparent); }
   .ro-perms { flex: none; display: flex; align-items: center; gap: 5px; }
+  /* Chips are the smallest type on the page, so they take the theme's own
+     colours rather than fixed ones: the old pink-on-transparent pair was
+     picked against a dark background and washed out completely in light mode. */
   .ro-perm {
     font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em; padding: 2px 7px; border-radius: 999px;
-    color: var(--muted); border: 1.5px solid var(--border-soft); background: var(--card);
+    color: color-mix(in srgb, var(--text) 72%, var(--muted));
+    border: 1.5px solid var(--border-soft); background: var(--card);
   }
-  .ro-perm.ro-perm-hot { color: #ffb4a8; border-color: rgb(255 120 100 / 0.42); background: rgb(255 110 90 / 0.12); }
-  .ro-count { flex: none; font-size: 11px; font-weight: 600; color: var(--muted); }
-  .ro-legend {
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px;
-    border-top: 1.5px solid var(--border-soft); font-size: 11px; font-weight: 600; color: var(--muted);
+  .ro-perm.ro-perm-hot {
+    color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, transparent);
+    background: color-mix(in srgb, var(--bad) 12%, var(--card));
   }
-  .ro-legend > span { display: inline-flex; align-items: center; gap: 6px; }
-  .ro-legend .ro-legend-lock { width: 13px; height: 13px; }
-  .ro-legend .ro-perm, .ro-legend .ro-tag { padding: 0 6px; }
+  .ro-permcount {
+    flex: none; font-size: 9.5px; font-weight: 700;
+    color: color-mix(in srgb, var(--text) 60%, var(--muted));
+    border: 1.5px dotted var(--border); border-radius: 999px; padding: 2px 7px;
+  }
+  .ro-pop { flex: none; display: flex; align-items: center; gap: 9px; }
+  .ro-bar { flex: none; width: 54px; height: 6px; border-radius: 999px; background: var(--border-soft); overflow: hidden; }
+  .ro-bar > i { display: block; height: 100%; border-radius: 999px; background: var(--rc, var(--muted)); opacity: 0.85; }
+  .ro-count { flex: none; min-width: 68px; text-align: right; font-size: 11px; font-weight: 700; color: var(--muted); }
   .ro-go { width: 15px; height: 15px; flex: none; color: var(--dim); transition: color 0.18s ease, transform 0.18s var(--ease); }
   .ro-row:not(.ro-locked):hover .ro-go { color: var(--accent-dark); transform: translateX(2px); }
+  /* The boundary between what this account may change and what it may not. */
+  .ro-divider {
+    display: flex; align-items: center; gap: 10px; margin: 7px 0 7px 42px;
+    font-size: 10.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted);
+  }
+  .ro-divider::after { content: ''; flex: 1; border-top: 1.5px dashed var(--border); }
+  .ro-divider svg { width: 13px; height: 13px; flex: none; color: var(--dim); }
+  .ro-empty {
+    display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 34px 16px;
+    text-align: center; font-size: 12.5px; font-weight: 700; color: var(--muted);
+  }
+  .ro-empty svg { width: 22px; height: 22px; color: var(--dim); }
+  .ro-head-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ro-total {
+    flex: none; font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--muted); background: var(--bg); border: 1.5px solid var(--border-soft);
+    border-radius: 999px; padding: 5px 11px; white-space: nowrap;
+  }
+  .ro-search { position: relative; display: flex; align-items: center; }
+  .ro-search > svg { position: absolute; left: 11px; width: 15px; height: 15px; color: var(--dim); pointer-events: none; }
+  .ro-search .input { width: 250px; height: 38px; padding-left: 34px; padding-right: 34px; }
+  .ro-search-clear {
+    position: absolute; right: 7px; display: grid; place-items: center; width: 22px; height: 22px;
+    padding: 0; border-radius: 7px; border: 1.5px solid var(--border-soft); background: var(--card);
+    color: var(--muted); cursor: pointer; transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .ro-search-clear:hover { color: var(--bad); border-color: var(--bad); }
+  .ro-search-clear svg { width: 12px; height: 12px; }
+  .ro-legend {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px;
+    border-top: 1.5px solid var(--border-soft); font-size: 11px; font-weight: 700; color: var(--muted);
+  }
+  .ro-legend > span {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+    border-radius: 999px; background: var(--bg); border: 1.5px solid var(--border-soft);
+  }
+  .ro-legend .ro-legend-lock { width: 13px; height: 13px; }
+  .ro-legend .ro-perm, .ro-legend .ro-tag { padding: 0 6px; }
+  .ro-legend .ro-bar { width: 40px; }
   @keyframes roIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   html.reduce-motion .ro-row, html.reduce-motion .role-stat { animation: none !important; transition: none !important; }
+  /* The right-hand cluster gives way in stages as the window narrows, so the
+     name keeps its room instead of everything being squeezed at once. */
+  @media (max-width: 1150px) { .ro-bar { display: none; } }
+  @media (max-width: 1100px) { .ro-perms { display: none; } }
+  @media (max-width: 1020px) { .ro-permcount { display: none; } }
   @media (max-width: 900px) {
-    .ro-perms { display: none; }
-    .ro-count { font-size: 10.5px; }
+    .ro-rail { width: 32px; }
+    .ro-rail::before { left: 15px; }
+    .ro-node { left: 8px; }
+    .ro-divider { margin-left: 32px; }
+    .ro-count { font-size: 10.5px; min-width: 0; }
+    .ro-face { width: 24px; height: 24px; border-radius: 8px; font-size: 11px; }
+  }
+  @media (max-width: 700px) {
+    .ro-head-right { width: 100%; }
+    .ro-search, .ro-search .input { width: 100%; }
   }
 
   /* MEMBER PROFILE PANEL */
@@ -3488,15 +3595,23 @@
           <div class="role-order-head">
             <div>
               <div class="card-title"><i data-lucide="list-ordered"></i> Role order</div>
-              <div class="card-sub">Locked rows sit at or above your own role — you can read them, not change them.</div>
+              <div class="card-sub">Highest first, on the spine. Locked rows sit at or above your own role — you can read them, not change them.</div>
             </div>
-            <input class="input role-order-search" id="role-order-search" placeholder="Filter roles…" autocomplete="off" spellcheck="false">
+            <div class="ro-head-right">
+              <span class="ro-total" id="ro-total">—</span>
+              <div class="ro-search">
+                <i data-lucide="search" aria-hidden="true"></i>
+                <input class="input role-order-search" id="role-order-search" placeholder="Filter roles…" autocomplete="off" spellcheck="false" aria-label="Filter roles">
+                <button class="ro-search-clear hidden" id="role-order-clear" type="button" title="Clear the filter"><i data-lucide="x"></i></button>
+              </div>
+            </div>
           </div>
           <div id="role-preview" class="role-order-list"></div>
           <div class="ro-legend">
             <span><i class="ro-legend-lock" data-lucide="lock"></i> at or above your role</span>
             <span><span class="ro-perm ro-perm-hot">administrator</span> holds a heavy permission</span>
             <span><span class="ro-tag ro-you">you</span> your highest role</span>
+            <span><span class="ro-bar"><i style="width:60%"></i></span> share of the server</span>
           </div>
         </div>
       </section>
@@ -7737,14 +7852,21 @@ function renderRolePreview() {
   const wrap = $('role-preview');
   if (!wrap) return;
   const search = $('role-order-search');
+  const clear = $('role-order-clear');
   const q = ((search && search.value) || '').trim().toLowerCase();
-  const list = (state.roleList || []).filter(r => !q || r.name.toLowerCase().includes(q));
+  const all = state.roleList || [];
+  const list = all.filter(r => !q || r.name.toLowerCase().includes(q));
+  if (clear) clear.classList.toggle('hidden', !q);
+  setText('ro-total', `${all.length} role${all.length === 1 ? '' : 's'}`);
+  const editable = all.filter(r => !roleLocked(r)).length;
+  setText('stat-editable', String(editable));
   if (!list.length) {
-    wrap.innerHTML = '<div class="card-sub" style="padding:12px">Nothing matched that filter.</div>';
+    wrap.innerHTML = `<div class="ro-empty"><i data-lucide="search"></i>`
+      + `<div>No role matches “${esc(q)}”.</div>`
+      + `<div class="card-sub">Clear the filter to see the whole ladder again.</div></div>`;
+    icons();
     return;
   }
-  const editable = (state.roleList || []).filter(r => !roleLocked(r)).length;
-  setText('stat-editable', String(editable));
   const actor = state.rolesActor || null;
   const ownTop = actor ? Number(actor.own_top || 0) : -1;
   // The flags worth shouting about: if a role carries one of these, whoever
@@ -7756,8 +7878,34 @@ function renderRolePreview() {
     ['manage_webhooks', 'webhooks'], ['mention_everyone', '@everyone'],
     ['moderate_members', 'timeout'], ['manage_messages', 'delete msgs'],
   ];
-  wrap.innerHTML = list.map((r, i) => {
+  // The spine is drawn per row and each segment blends into its neighbours', so
+  // a row has to know what sits above and below it. `transparent` at the ends —
+  // and at the editable/locked boundary — is what makes the line visibly stop
+  // there instead of running into the card's edge.
+  const colourOf = (role) => (role && role.color_int ? role.color : 'var(--muted)');
+  // The mark is filled with the role's own colour, so its letter needs the ink
+  // that reads on that colour: white disappears on a pale role, near-black on a
+  // dark one.
+  const inkOn = (role) => {
+    const hex = role.color_int ? role.color : '#7a7161';
+    const [red, green, blue] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+    return (0.2126 * red + 0.7152 * green + 0.0722 * blue) > 150 ? '#241f1a' : '#ffffff';
+  };
+  const busiest = Math.max(1, ...all.map(r => Number(r.member_count) || 0));
+  const allLocked = editable === 0 && list.some(r => roleLocked(r));
+  let previousLocked = null;
+  wrap.innerHTML = (allLocked
+    ? `<div class="ro-divider"><i data-lucide="lock"></i> Nothing here is yours to edit</div>`
+    : '') + list.map((r, i) => {
     const locked = roleLocked(r);
+    // Where the ladder stops being yours to change: a labelled rule at the step
+    // down from the locked block into the editable one. Roles that are locked
+    // for their own reasons (a bot's managed role, @everyone) sit further down
+    // and get no rule, because nothing about the boundary changed there.
+    const boundary = !locked && previousLocked === true;
+    previousLocked = locked;
+    const first = i === 0 || boundary;
+    const last = i === list.length - 1;
     const isMe = ownTop >= 0 && !r.is_default && !r.managed && Number(r.position) === ownTop;
     const atBot = actor && Number(r.position) === Number(actor.bot_top) && !r.is_default;
     const tags = [
@@ -7772,17 +7920,30 @@ function renderRolePreview() {
     const heavyHtml = heavy.slice(0, 3).map(([k, label]) => {
       const risky = k === 'administrator' || k === 'manage_guild';
       return `<span class="ro-perm ${risky ? 'ro-perm-hot' : ''}" title="${esc(label)}">${esc(label)}</span>`;
-    }).join('') + (heavy.length > 3 ? `<span class="ro-perm">+${heavy.length - 3}</span>` : '');
+    }).join('');
     const total = Number(r.permission_count || 0);
-    return `
-    <button class="row ro-row ${locked ? 'ro-locked' : ''} ${isMe ? 'ro-mine' : ''}" data-preview-role="${r.id}" style="--i:${Math.min(i, 22)};--rc:${r.color_int ? r.color : 'var(--border)'}"
+    const count = Number(r.member_count) || 0;
+    const share = Math.max(5, Math.round(count / busiest * 100));
+    // Roles without a custom icon get their initial, so the row still has its
+    // own mark rather than an anonymous colour block.
+    const initial = (r.name.replace(/[^A-Za-z0-9]/g, '').charAt(0) || '#').toUpperCase();
+    return (boundary ? `<div class="ro-divider"><i data-lucide="chevrons-down"></i> Yours to edit from here down</div>` : '') + `
+    <button class="ro-row ${locked ? 'ro-locked' : ''} ${isMe ? 'ro-mine' : ''}" data-preview-role="${r.id}"
+            style="--i:${Math.min(i, 22)};--rc:${colourOf(r)};--rc-up:${first ? 'transparent' : colourOf(list[i - 1])};--rc-down:${last ? 'transparent' : colourOf(list[i + 1])}"
             title="${locked ? esc(r.actor_reason || 'At or above your highest role') : esc(r.name + ' \u00b7 ' + total + ' permission' + (total === 1 ? '' : 's'))}">
-      <span class="ro-pos mono">${r.position}</span>
-      <span class="ro-face" style="--rc:${r.color_int ? r.color : 'var(--muted)'}">${r.icon ? `<img src="${esc(r.icon)}" alt="">` : ''}</span>
-      <span class="ro-name">${esc(r.name)}${tags}</span>
-      <span class="ro-perms">${heavyHtml}</span>
-      <span class="ro-count" title="${total} permission${total === 1 ? '' : 's'}">${r.member_count} member${r.member_count === 1 ? '' : 's'}</span>
-      <i data-lucide="${locked ? 'lock' : 'chevron-right'}" class="ro-go"></i>
+      <span class="ro-rail" aria-hidden="true"><i class="ro-node"></i></span>
+      <span class="ro-card">
+        <span class="ro-pos mono">${r.position}</span>
+        <span class="ro-face" style="--face-ink:${inkOn(r)}">${r.icon ? `<img src="${esc(r.icon)}" alt="">` : esc(initial)}</span>
+        <span class="ro-name"><b>${esc(r.name)}</b>${tags}</span>
+        <span class="ro-perms">${heavyHtml}</span>
+        <span class="ro-permcount" title="${heavy.length ? esc(heavy.map(([, label]) => label).join(', ')) : 'no heavy permissions'}">${total} perm${total === 1 ? '' : 's'}</span>
+        <span class="ro-pop">
+          <span class="ro-bar" aria-hidden="true"><i style="width:${share}%"></i></span>
+          <span class="ro-count">${count} member${count === 1 ? '' : 's'}</span>
+        </span>
+        <i data-lucide="${locked ? 'lock' : 'chevron-right'}" class="ro-go"></i>
+      </span>
     </button>`;
   }).join('');
   wrap.querySelectorAll('[data-preview-role]').forEach(btn => {
@@ -7797,6 +7958,12 @@ function renderRolePreview() {
 
 const roleOrderSearch = $('role-order-search');
 if (roleOrderSearch) roleOrderSearch.oninput = () => renderRolePreview();
+const roleOrderClear = $('role-order-clear');
+if (roleOrderClear) roleOrderClear.onclick = () => {
+  if (roleOrderSearch) roleOrderSearch.value = '';
+  renderRolePreview();
+  if (roleOrderSearch) roleOrderSearch.focus();
+};
 
 async function openRoleManager() {
   // The hierarchy needs the actor block, so make sure the role list — and with
