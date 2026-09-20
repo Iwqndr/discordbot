@@ -3508,15 +3508,20 @@ DASH_TITLE_EFFECTS = [
     {"id": "solid", "label": "Solid colour", "colors": 1, "desc": "One flat colour."},
     {"id": "gradient", "label": "Gradient", "colors": 2, "desc": "Two colours flowing across the letters."},
     {"id": "duotone", "label": "Duotone", "colors": 2, "desc": "Two colours split down the middle of the text."},
+    {"id": "flare", "label": "Flare", "colors": 2, "desc": "Top-to-bottom two-tone, like fire over ice."},
     {"id": "rainbow", "label": "Rainbow", "colors": 0, "desc": "Animated seven-colour sweep. Picks its own colours."},
     {"id": "shimmer", "label": "Shimmer", "colors": 2, "desc": "A moving highlight that sweeps along the letters."},
+    {"id": "holographic", "label": "Holographic", "colors": 2, "desc": "Iridescent two-colour sheen that pans back and forth."},
     {"id": "chrome", "label": "Chrome", "colors": 2, "desc": "Polished metal gradient with a lit top edge."},
     {"id": "glow", "label": "Glow", "colors": 1, "desc": "A coloured halo behind the text."},
     {"id": "neon", "label": "Neon", "colors": 2, "desc": "White core with a two-colour tube glow around it."},
     {"id": "outline", "label": "Outline", "colors": 1, "desc": "Hollow letters drawn in the accent colour."},
     {"id": "shadow", "label": "Hard shadow", "colors": 2, "desc": "Flat letters with a solid offset shadow behind them."},
+    {"id": "sticker", "label": "Sticker", "colors": 2, "desc": "Chunky outline in the second colour, with a hard drop."},
+    {"id": "glitch", "label": "Glitch", "colors": 2, "desc": "The two colours pull apart, like a bad signal."},
+    {"id": "stripe", "label": "Stripes", "colors": 2, "desc": "Diagonal candy stripes across the letters."},
     {"id": "emboss", "label": "Emboss", "colors": 1, "desc": "Chiselled letters with a lit and shaded edge."},
-    {"id": "underline", "label": "Underline", "colors": 2, "desc": "Plain letters with an accent rule underneath."},
+    {"id": "underline", "label": "Underline", "colors": 2, "desc": "Plain letters with a double rule underneath."},
 ]
 
 DASH_TITLE_FILLS = [
@@ -3535,9 +3540,15 @@ DASH_TITLE_FONTS = [
 _DEFAULT_TITLE_STYLE = {
     "effect": "solid", "colors": ["#6ea8c9", "#c98f26"], "font": "",
     "weight": 800, "size": 11, "spacing": 0.5, "italic": False,
-    "uppercase": True, "fill": "soft", "radius": 999, "pad_x": 8, "pad_y": 3,
-    "border": 0, "glow": 0,
+    "uppercase": True, "case": "upper", "fill": "soft", "radius": 999,
+    "pad_x": 8, "pad_y": 3, "border": 0, "border_style": "solid", "glow": 0,
+    "rotate": 0, "pill_gradient": False, "icon": "",
 }
+
+# The letter-case modes the editor offers. `uppercase` is the switch this
+# replaced and is still written, so a badge saved before it renders the same.
+_TITLE_CASES = {"upper", "lower", "title", "none"}
+_TITLE_BORDER_STYLES = {"solid", "dashed", "dotted"}
 
 def _title_preset(label, color, effect="solid", fill="soft", keywords=None, priority=10, **style):
     entry = {"label": label, "priority": priority, "keywords": keywords if keywords else [label.lower()]}
@@ -3633,7 +3644,19 @@ def _clean_title_style(raw):
     base["border"] = _clamp_int(raw.get("border"), 0, 4, base["border"])
     base["glow"] = _clamp_int(raw.get("glow"), 0, 24, base["glow"])
     base["italic"] = bool(raw.get("italic"))
-    base["uppercase"] = raw.get("uppercase") is not False
+
+    case = str(raw.get("case") or "").strip().lower()
+    if case not in _TITLE_CASES:
+        # No case yet: the old uppercase switch is the only thing to go on.
+        case = "none" if raw.get("uppercase") is False else "upper"
+    base["case"] = case
+    base["uppercase"] = case == "upper"
+
+    border_style = str(raw.get("border_style") or "").strip().lower()
+    base["border_style"] = border_style if border_style in _TITLE_BORDER_STYLES else "solid"
+    base["rotate"] = _clamp_int(raw.get("rotate"), -14, 14, base["rotate"])
+    base["pill_gradient"] = bool(raw.get("pill_gradient"))
+    base["icon"] = str(raw.get("icon") or "").strip()[:4]
     return base
 
 

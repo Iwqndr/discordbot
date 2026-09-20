@@ -1314,7 +1314,12 @@
   .mem-row:hover { transform: translateY(-2px); border-color: var(--accent-dark); }
   .mem-av { width: 38px; height: 38px; border-radius: 50%; flex: none; background: var(--card); object-fit: cover; }
   .mem-main { flex: 1; min-width: 0; }
-  .mem-name { display: block; font-weight: 800; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The name ellipsizes, but the badge next to it must not be clipped with it:
+     a tilted pill leans past a one-line box and would come back with its ends
+     sliced off. So the ellipsis lives on the text and the row is a flex line. */
+  .mem-name { display: flex; align-items: center; min-width: 0; font-weight: 800; font-size: 14.5px; }
+  .mem-name > .mem-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .mem-name > .staff-tag { flex: none; }
   .mem-sub { display: block; color: var(--muted); font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mem-side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: none; }
   .mem-role { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 3px 9px; border: 1.5px solid var(--border-soft); color: var(--muted); white-space: nowrap; }
@@ -1637,13 +1642,23 @@
     --tg-a: #6ea8c9; --tg-b: #6ea8c9;
     --tg-size: 11px; --tg-weight: 800; --tg-spacing: 0.5px;
     --tg-pad-x: 8px; --tg-pad-y: 3px; --tg-radius: 999px; --tg-bw: 0px;
+    --tg-bw-style: solid; --tg-rot: 0deg;
     display: inline-flex; align-items: center; vertical-align: middle;
     margin-left: 6px;
+    gap: 0.35em;
     font-size: var(--tg-size); font-weight: var(--tg-weight);
     letter-spacing: var(--tg-spacing); line-height: 1.45; white-space: nowrap;
     padding: var(--tg-pad-y) var(--tg-pad-x);
-    border: var(--tg-bw) solid transparent; border-radius: var(--tg-radius);
+    border: var(--tg-bw) var(--tg-bw-style) transparent; border-radius: var(--tg-radius);
   }
+  /* Tilt rides on its own class so an untilted badge carries no transform at
+     all and paints exactly as it did before the control existed. It uses the
+     `rotate` property rather than `transform`, because rows that already scale
+     a badge would otherwise lose that scale. */
+  .staff-tag.tg-tilt { rotate: var(--tg-rot); }
+  /* An optional glyph pinned before the letters. gap on the pill keeps it off
+     the text, so no margin is needed here. */
+  .staff-tag-icon { font-size: 1.06em; line-height: 1; letter-spacing: 0; }
   .staff-tag.tg-soft {
     background: color-mix(in srgb, var(--tg-a) 16%, transparent);
     border-color: color-mix(in srgb, var(--tg-a) 34%, transparent);
@@ -1652,6 +1667,21 @@
   .staff-tag.tg-solid { background: var(--tg-a); color: #ffffff; }
   .staff-tag.tg-outline { background: transparent; border-color: var(--tg-a); color: var(--tg-a); }
   .staff-tag.tg-plain { background: transparent; color: var(--tg-a); }
+  /* "Gradient pill" paints the pill itself with both colours. It has to be
+     declared after the fills: those set the `background` shorthand, which
+     would otherwise wipe the gradient back out. Each fill keeps a version that
+     still reads as two colours — an outlined pill turns its border into the
+     second colour rather than losing the switch. */
+  .staff-tag.tg-pillgrad {
+    background-image: linear-gradient(90deg, var(--tg-a), var(--tg-b));
+    border-color: color-mix(in srgb, var(--tg-b) 55%, transparent);
+  }
+  .staff-tag.tg-outline.tg-pillgrad { background-image: none; border-color: var(--tg-b); }
+  .staff-tag.tg-plain.tg-pillgrad {
+    background-image: linear-gradient(90deg,
+      color-mix(in srgb, var(--tg-a) 20%, transparent),
+      color-mix(in srgb, var(--tg-b) 20%, transparent));
+  }
   .staff-tag-label { display: inline-block; }
   .staff-tag-label.tg-solid { color: inherit; }
   .staff-tag-label.tg-gradient {
@@ -1664,6 +1694,7 @@
     background-size: 300% 100%;
     -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
+    background-position: 0% 50%;
     animation: staffRainbow 7s linear infinite;
   }
   @keyframes staffRainbow { from { background-position: 0% 50%; } to { background-position: 300% 50%; } }
@@ -1684,14 +1715,79 @@
     -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
   }
+  /* The sweep is a highlight on a wider gradient. `background-position` is set
+     to the centre as well as animated: with motion switched off the highlight
+     then comes to rest over the letters and the badge still looks like a
+     shimmer instead of collapsing into a flat colour. This is the bug where an
+     effect showed in the panel and looked like a plain tag on this page. */
   .staff-tag-label.tg-shimmer {
-    background-image: linear-gradient(100deg, var(--tg-a) 0%, var(--tg-a) 38%, var(--tg-b) 50%, var(--tg-a) 62%, var(--tg-a) 100%);
+    background-image: linear-gradient(100deg,
+      var(--tg-a) 0%, var(--tg-a) 30%, var(--tg-b) 48%,
+      color-mix(in srgb, var(--tg-b) 55%, #ffffff) 52%,
+      var(--tg-b) 56%, var(--tg-a) 74%, var(--tg-a) 100%);
     background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
+    background-position: 50% 50%;
     animation: staffShimmer 3.6s linear infinite;
   }
   @keyframes staffShimmer { from { background-position: 200% 50%; } to { background-position: -100% 50%; } }
+  /* Fire/ice: a vertical two-tone, so the second colour is always on screen. */
+  .staff-tag-label.tg-flare {
+    background-image: linear-gradient(180deg,
+      color-mix(in srgb, var(--tg-b) 80%, #ffffff) 0%,
+      var(--tg-b) 36%, var(--tg-a) 64%,
+      color-mix(in srgb, var(--tg-a) 55%, #000000) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--tg-b) 40%, transparent));
+  }
+  /* Candy stripes, clipped to the letters. */
+  .staff-tag-label.tg-stripe {
+    background-image: repeating-linear-gradient(45deg,
+      var(--tg-a) 0 3px, var(--tg-b) 3px 6px);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+  }
+  /* Chromatic split: one colour pulled left, the other right. The jitter is
+     optional garnish — the static frame already reads as a glitch. */
+  .staff-tag-label.tg-glitch {
+    color: var(--tg-a);
+    text-shadow: -1.6px 0 var(--tg-b), 1.6px 0 var(--tg-a),
+      -3.2px 0 color-mix(in srgb, var(--tg-b) 55%, transparent);
+    animation: staffGlitch 2.8s steps(1, end) infinite;
+  }
+  @keyframes staffGlitch {
+    0%, 84%, 100% { transform: none; }
+    86% { transform: translateX(-0.7px); }
+    88% { transform: translateX(0.7px); }
+    90% { transform: none; }
+  }
+  /* A chunky outline in the second colour, plus a hard drop for the sticker
+     look. Drawn with shadows rather than -webkit-text-stroke so the outline
+     sits outside the letters instead of eating into them. */
+  .staff-tag-label.tg-sticker {
+    color: var(--tg-a);
+    text-shadow: -1.5px -1.5px 0 var(--tg-b), 0 -1.5px 0 var(--tg-b), 1.5px -1.5px 0 var(--tg-b),
+      -1.5px 0 0 var(--tg-b), 1.5px 0 0 var(--tg-b),
+      -1.5px 1.5px 0 var(--tg-b), 0 1.5px 0 var(--tg-b), 1.5px 1.5px 0 var(--tg-b),
+      0 3px 0 color-mix(in srgb, var(--tg-b) 65%, #000000);
+  }
+  /* Iridescent sheen panning across two colours. Rest position is the middle
+     of the sweep, so it still looks iridescent when motion is off. */
+  .staff-tag-label.tg-holographic {
+    background-image: linear-gradient(100deg,
+      var(--tg-a) 0%, var(--tg-b) 18%,
+      color-mix(in srgb, var(--tg-b) 45%, #ffffff) 32%,
+      var(--tg-a) 46%, var(--tg-b) 64%,
+      color-mix(in srgb, var(--tg-a) 55%, #ffffff) 80%, var(--tg-a) 100%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+    background-position: 50% 50%;
+    animation: staffHolo 6s ease-in-out infinite alternate;
+  }
+  @keyframes staffHolo { from { background-position: 5% 50%; } to { background-position: 95% 50%; } }
   .staff-tag-label.tg-chrome {
     background-image: linear-gradient(180deg,
       color-mix(in srgb, var(--tg-b) 40%, #ffffff) 0%,
@@ -1721,12 +1817,23 @@
     color: var(--tg-a);
     text-decoration: underline;
     text-decoration-color: var(--tg-b);
-    text-decoration-thickness: 1.5px;
+    /* Doubled and lifted off the baseline: a single hairline was close to
+       invisible, so the second colour had nowhere to show. */
+    text-decoration-style: double;
+    text-decoration-thickness: 2.5px;
     text-underline-offset: 2px;
   }
+  /* Motion off must leave the style readable, never blank it: every animated
+     effect above carries a rest state it falls back to. */
+  html.reduce-motion .staff-tag-label.tg-rainbow,
+  html.reduce-motion .staff-tag-label.tg-shimmer,
+  html.reduce-motion .staff-tag-label.tg-glitch,
+  html.reduce-motion .staff-tag-label.tg-holographic { animation: none !important; }
   @media (prefers-reduced-motion: reduce) {
     .staff-tag-label.tg-rainbow,
-    .staff-tag-label.tg-shimmer { animation: none !important; }
+    .staff-tag-label.tg-shimmer,
+    .staff-tag-label.tg-glitch,
+    .staff-tag-label.tg-holographic { animation: none !important; }
   }
 
   /* ============================================================
@@ -2464,7 +2571,7 @@ const ROLES = [
       ["purgeattachments [amount]", "Delete messages with attachments", { how: "Deletes messages with file attachments.", args: [["[amount]", "Scan count. Default 50.", "optional"]], ex: [">purgeattachments"], use: "Remove image dumps or leaked files." }],
       ["kick <member> [reason]", "Kick a member", { how: "Removes a member from the server.", args: [["<member>", "Member to kick.", "required"], ["[reason]", "Reason logged.", "optional"]], ex: [">kick @user", ">kick @user Spam"], use: "First-time offenses where you want them gone but not banned." }],
       ["ban <member> [reason]", "Ban a member", { how: "Permanently bans a member.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">ban @user", ">ban @user Repeated violations"], use: "Serious or repeat offenses." }],
-      ["unban <user_id> [reason]", "Unban a user by ID", { how: "Lifts a ban using the user's numeric ID.", args: [["<user_id>", "Discord user ID.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">unban 1243983895481815114"], use: "Reverse a ban after an appeal." }],
+      ["unban <user_id> [reason]", "Unban a user by ID", { how: "Lifts a ban using the user's numeric ID.", args: [["<user_id>", "Discord user ID.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">unban 123456789012345678"], use: "Reverse a ban after an appeal." }],
       ["softban <member> [reason]", "Ban then unban to purge messages", { how: "Bans and immediately unbans, purging recent messages.", args: [["<member>", "Target.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">softban @user"], use: "Clean a user's recent messages without a permanent ban." }],
       ["tempban <member> <duration> [reason]", "Temporary ban", { how: "Bans for a set time, then auto-unbans.", args: [["<member>", "Target.", "required"], ["<duration>", "e.g. `1h`, `1d`.", "required"], ["[reason]", "Reason.", "optional"]], ex: [">tempban @user 1d", ">tempban @user 7d Harassment"], use: "Cool-off bans." }],
       ["banlist", "List banned users", { how: "Shows up to 100 banned users with reasons.", ex: [">banlist"], use: "Quickly audit bans." }],
@@ -6344,7 +6451,7 @@ function memberRowHtml(member, rank) {
   return `<button class="mem-row" data-uid="${escapeHtml(member.user_id)}">
     <img class="mem-av" src="${escapeHtml(member.avatar_url || "")}" alt="" loading="lazy">
     <span class="mem-main">
-      <span class="mem-name">${styledNameHtml(member)}${staffTitleHtml(member)}${member.bot ? " (bot)" : ""}</span>
+      <span class="mem-name"><span class="mem-text">${styledNameHtml(member)}</span>${staffTitleHtml(member)}${member.bot ? " (bot)" : ""}</span>
       <span class="mem-sub">@${escapeHtml(member.username || "unknown")} &middot; ${escapeHtml(member.user_id)}</span>
     </span>
     <span class="mem-side">
@@ -6789,15 +6896,29 @@ function memberStaffTitle(member) {
    something sane even if a badge is only half described. */
 const STAFF_TAG_DEFAULTS = {
   effect: "solid", colors: ["#6ea8c9", "#c98f26"], font: "", weight: 800, size: 11,
-  spacing: 0.5, italic: false, uppercase: true, fill: "soft", radius: 999,
-  pad_x: 8, pad_y: 3, border: 0, glow: 0
+  spacing: 0.5, italic: false, uppercase: true, case: "upper", fill: "soft", radius: 999,
+  pad_x: 8, pad_y: 3, border: 0, border_style: "solid", glow: 0, rotate: 0,
+  pill_gradient: false, icon: ""
 };
 // Every letter style the admin editor can hand out. Anything else falls back
 // to a flat colour, so an unknown value never produces an unstyled badge.
 const STAFF_TAG_EFFECTS = [
-  "solid", "gradient", "duotone", "rainbow", "shimmer", "chrome",
-  "glow", "neon", "outline", "shadow", "emboss", "underline",
+  "solid", "gradient", "duotone", "flare", "rainbow", "shimmer", "holographic",
+  "chrome", "glow", "neon", "outline", "shadow", "sticker", "glitch", "stripe",
+  "emboss", "underline",
 ];
+
+/* upper / lower / Title / exactly as typed. `uppercase` is the switch this
+   replaced and is still honoured, so a badge saved before it behaves. */
+function tagTextFor(style, raw) {
+  const st = style || {};
+  const mode = st.case || (st.uppercase === false ? "none" : "upper");
+  if (mode === "lower") return raw.toLowerCase();
+  if (mode === "none") return raw;
+  if (mode === "title") return raw.replace(/[A-Za-z][A-Za-z'\u2019-]*/g,
+    w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  return raw.toUpperCase();
+}
 
 function staffTagStyle(style) {
   const st = Object.assign({}, STAFF_TAG_DEFAULTS, style || {});
@@ -6805,18 +6926,22 @@ function staffTagStyle(style) {
   const a = /^#[0-9a-fA-F]{3,8}$/.test(colors[0] || "") ? colors[0] : "#6ea8c9";
   const b = /^#[0-9a-fA-F]{3,8}$/.test(colors[1] || "") ? colors[1] : a;
   const fill = ["soft", "solid", "outline", "plain"].includes(st.fill) ? st.fill : "soft";
+  const dash = ["solid", "dashed", "dotted"].includes(st.border_style) ? st.border_style : "solid";
+  // A dashed border at 0px would be invisible, so asking for one implies a
+  // visible width — the panel's builder says the same thing.
   const border = Math.max(0, Math.min(4, Number(st.border) || 0))
-    || (fill === "outline" ? 1 : 0);
+    || (fill === "outline" || dash !== "solid" ? 1 : 0);
   const size = Math.max(8, Math.min(22, Number(st.size) || 11));
   const glow = Math.max(0, Math.min(24, Number(st.glow) || 0)) || (st.effect === "glow" ? 14 : 0);
   const font = /^[A-Za-z0-9 '\-]+$/.test(String(st.font || "")) ? `font-family:'${st.font}',sans-serif;` : "";
+  const rotate = Math.max(-14, Math.min(14, Math.round(Number(st.rotate) || 0)));
   const vars = `--tg-a:${a};--tg-b:${b};` +
     `--tg-size:${size}px;--tg-weight:${Math.max(400, Math.min(900, Number(st.weight) || 800))};` +
     `--tg-spacing:${Math.max(0, Math.min(3, Number(st.spacing) || 0))}px;` +
     `--tg-pad-x:${Math.max(0, Math.min(24, Number(st.pad_x) || 0))}px;` +
     `--tg-pad-y:${Math.max(0, Math.min(12, Number(st.pad_y) || 0))}px;` +
     `--tg-radius:${Math.max(0, Math.min(999, Number(st.radius) || 0))}px;` +
-    `--tg-bw:${border}px;--tg-glow:${glow}px;`;
+    `--tg-bw:${border}px;--tg-bw-style:${dash};--tg-rot:${rotate}deg;--tg-glow:${glow}px;`;
   return { fill, effect: STAFF_TAG_EFFECTS.includes(st.effect) ? st.effect : "solid",
     css: font + vars + (st.italic ? "font-style:italic;" : "") };
 }
@@ -6824,10 +6949,14 @@ function staffTagStyle(style) {
 function staffTitleHtml(member) {
   const t = memberStaffTitle(member);
   if (!t || !t.label) return "";
-  const s = staffTagStyle(t.style);
+  const st = Object.assign({}, STAFF_TAG_DEFAULTS, t.style || {});
+  const s = staffTagStyle(st);
   const raw = `${t.prefix || ""}${t.label}${t.suffix || ""}`;
-  const text = t.style && t.style.uppercase === false ? raw : raw.toUpperCase();
-  return `<span class="staff-tag tg-${s.fill}" style="${s.css}"><span class="staff-tag-label tg-${s.effect}">${escapeHtml(text)}</span></span>`;
+  const icon = String(st.icon || "").trim();
+  const tilt = Math.max(-14, Math.min(14, Math.round(Number(st.rotate) || 0))) ? " tg-tilt" : "";
+  const pill = `staff-tag tg-${s.fill}${st.pill_gradient ? " tg-pillgrad" : ""}${tilt}`;
+  const glyph = icon ? `<span class="staff-tag-icon">${escapeHtml(icon)}</span>` : "";
+  return `<span class="${pill}" style="${s.css}">${glyph}<span class="staff-tag-label tg-${s.effect}">${escapeHtml(tagTextFor(st, raw))}</span></span>`;
 }
 
 function applyProfileToLocal() {

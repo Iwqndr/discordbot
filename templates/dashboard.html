@@ -2142,12 +2142,22 @@
     --tg-a: #6ea8c9; --tg-b: #6ea8c9;
     --tg-size: 11px; --tg-weight: 800; --tg-spacing: 0.5px;
     --tg-pad-x: 8px; --tg-pad-y: 3px; --tg-radius: 999px; --tg-bw: 0px;
+    --tg-bw-style: solid; --tg-rot: 0deg;
     display: inline-flex; align-items: center; vertical-align: middle;
+    gap: 0.35em;
     font-size: var(--tg-size); font-weight: var(--tg-weight);
     letter-spacing: var(--tg-spacing); line-height: 1.45; white-space: nowrap;
     padding: var(--tg-pad-y) var(--tg-pad-x);
-    border: var(--tg-bw) solid transparent; border-radius: var(--tg-radius);
+    border: var(--tg-bw) var(--tg-bw-style) transparent; border-radius: var(--tg-radius);
   }
+  /* Tilt rides on its own class so an untilted badge carries no transform at
+     all and paints exactly as it did before the control existed. It uses the
+     `rotate` property rather than `transform`, because rows that already scale
+     a badge (the member list narrows it) would otherwise lose that scale. */
+  .staff-tag.tg-tilt { rotate: var(--tg-rot); }
+  /* An optional glyph pinned before the letters. gap on the pill keeps it off
+     the text, so no margin is needed here. */
+  .staff-tag-icon { font-size: 1.06em; line-height: 1; letter-spacing: 0; }
   .staff-tag.tg-soft {
     background: color-mix(in srgb, var(--tg-a) 16%, transparent);
     border-color: color-mix(in srgb, var(--tg-a) 34%, transparent);
@@ -2156,6 +2166,21 @@
   .staff-tag.tg-solid { background: var(--tg-a); color: #ffffff; }
   .staff-tag.tg-outline { background: transparent; border-color: var(--tg-a); color: var(--tg-a); }
   .staff-tag.tg-plain { background: transparent; color: var(--tg-a); }
+  /* "Gradient pill" paints the pill itself with both colours. It has to be
+     declared after the fills: those set the `background` shorthand, which
+     would otherwise wipe the gradient back out. Each fill keeps a version that
+     still reads as two colours — an outlined pill turns its border into the
+     second colour rather than losing the switch. */
+  .staff-tag.tg-pillgrad {
+    background-image: linear-gradient(90deg, var(--tg-a), var(--tg-b));
+    border-color: color-mix(in srgb, var(--tg-b) 55%, transparent);
+  }
+  .staff-tag.tg-outline.tg-pillgrad { background-image: none; border-color: var(--tg-b); }
+  .staff-tag.tg-plain.tg-pillgrad {
+    background-image: linear-gradient(90deg,
+      color-mix(in srgb, var(--tg-a) 20%, transparent),
+      color-mix(in srgb, var(--tg-b) 20%, transparent));
+  }
   .staff-tag-label { display: inline-block; }
   .staff-tag-label.tg-solid { color: inherit; }
   .staff-tag-label.tg-gradient {
@@ -2168,11 +2193,10 @@
     background-size: 300% 100%;
     -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
+    background-position: 0% 50%;
     animation: staffRainbow 7s linear infinite;
   }
   @keyframes staffRainbow { from { background-position: 0% 50%; } to { background-position: 300% 50%; } }
-  html.reduce-motion .staff-tag-label.tg-rainbow,
-  html.reduce-motion .staff-tag-label.tg-shimmer { animation: none !important; }
   .staff-tag-label.tg-glow {
     color: var(--tg-a);
     text-shadow: 0 0 var(--tg-glow, 14px) color-mix(in srgb, var(--tg-a) 75%, transparent);
@@ -2190,14 +2214,78 @@
     -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
   }
+  /* The sweep is a highlight on a wider gradient. `background-position` is set
+     to the centre as well as animated, so a bonus of that layout: with motion
+     switched off the highlight comes to rest over the letters and the badge
+     still looks like a shimmer instead of collapsing into a flat colour. */
   .staff-tag-label.tg-shimmer {
-    background-image: linear-gradient(100deg, var(--tg-a) 0%, var(--tg-a) 38%, var(--tg-b) 50%, var(--tg-a) 62%, var(--tg-a) 100%);
+    background-image: linear-gradient(100deg,
+      var(--tg-a) 0%, var(--tg-a) 30%, var(--tg-b) 48%,
+      color-mix(in srgb, var(--tg-b) 55%, #ffffff) 52%,
+      var(--tg-b) 56%, var(--tg-a) 74%, var(--tg-a) 100%);
     background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
+    background-position: 50% 50%;
     animation: staffShimmer 3.6s linear infinite;
   }
   @keyframes staffShimmer { from { background-position: 200% 50%; } to { background-position: -100% 50%; } }
+  /* Fire/ice: a vertical two-tone, so the second colour is always on screen. */
+  .staff-tag-label.tg-flare {
+    background-image: linear-gradient(180deg,
+      color-mix(in srgb, var(--tg-b) 80%, #ffffff) 0%,
+      var(--tg-b) 36%, var(--tg-a) 64%,
+      color-mix(in srgb, var(--tg-a) 55%, #000000) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--tg-b) 40%, transparent));
+  }
+  /* Candy stripes, clipped to the letters. */
+  .staff-tag-label.tg-stripe {
+    background-image: repeating-linear-gradient(45deg,
+      var(--tg-a) 0 3px, var(--tg-b) 3px 6px);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+  }
+  /* Chromatic split: one colour pulled left, the other right. The jitter is
+     optional garnish — the static frame already reads as a glitch. */
+  .staff-tag-label.tg-glitch {
+    color: var(--tg-a);
+    text-shadow: -1.6px 0 var(--tg-b), 1.6px 0 var(--tg-a),
+      -3.2px 0 color-mix(in srgb, var(--tg-b) 55%, transparent);
+    animation: staffGlitch 2.8s steps(1, end) infinite;
+  }
+  @keyframes staffGlitch {
+    0%, 84%, 100% { transform: none; }
+    86% { transform: translateX(-0.7px); }
+    88% { transform: translateX(0.7px); }
+    90% { transform: none; }
+  }
+  /* A chunky outline in the second colour, plus a hard drop for the sticker
+     look. Drawn with shadows rather than -webkit-text-stroke so the outline
+     sits outside the letters instead of eating into them. */
+  .staff-tag-label.tg-sticker {
+    color: var(--tg-a);
+    text-shadow: -1.5px -1.5px 0 var(--tg-b), 0 -1.5px 0 var(--tg-b), 1.5px -1.5px 0 var(--tg-b),
+      -1.5px 0 0 var(--tg-b), 1.5px 0 0 var(--tg-b),
+      -1.5px 1.5px 0 var(--tg-b), 0 1.5px 0 var(--tg-b), 1.5px 1.5px 0 var(--tg-b),
+      0 3px 0 color-mix(in srgb, var(--tg-b) 65%, #000000);
+  }
+  /* Iridescent sheen panning across two colours. Rest position is the middle
+     of the sweep, so it still looks iridescent when motion is off. */
+  .staff-tag-label.tg-holographic {
+    background-image: linear-gradient(100deg,
+      var(--tg-a) 0%, var(--tg-b) 18%,
+      color-mix(in srgb, var(--tg-b) 45%, #ffffff) 32%,
+      var(--tg-a) 46%, var(--tg-b) 64%,
+      color-mix(in srgb, var(--tg-a) 55%, #ffffff) 80%, var(--tg-a) 100%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+    background-position: 50% 50%;
+    animation: staffHolo 6s ease-in-out infinite alternate;
+  }
+  @keyframes staffHolo { from { background-position: 5% 50%; } to { background-position: 95% 50%; } }
   .staff-tag-label.tg-chrome {
     background-image: linear-gradient(180deg,
       color-mix(in srgb, var(--tg-b) 40%, #ffffff) 0%,
@@ -2227,9 +2315,18 @@
     color: var(--tg-a);
     text-decoration: underline;
     text-decoration-color: var(--tg-b);
-    text-decoration-thickness: 1.5px;
+    /* Doubled and lifted off the baseline: a single hairline was close to
+       invisible, so the second colour had nowhere to show. */
+    text-decoration-style: double;
+    text-decoration-thickness: 2.5px;
     text-underline-offset: 2px;
   }
+  /* Motion off has to leave the style readable, never blank it: every animated
+     effect above carries a rest state it falls back to. */
+  html.reduce-motion .staff-tag-label.tg-rainbow,
+  html.reduce-motion .staff-tag-label.tg-shimmer,
+  html.reduce-motion .staff-tag-label.tg-glitch,
+  html.reduce-motion .staff-tag-label.tg-holographic { animation: none !important; }
   /* ============================================================
      STAFF TITLES — the list, and the editor that opens from it
      ============================================================ */
@@ -12279,8 +12376,9 @@ const RT_SWATCHES = [
 /* Every letter style the editor can assign. Mirrors DASH_TITLE_EFFECTS on the
    server; anything else falls back to a flat colour. */
 const RT_EFFECTS = [
-  'solid', 'gradient', 'duotone', 'rainbow', 'shimmer', 'chrome',
-  'glow', 'neon', 'outline', 'shadow', 'emboss', 'underline',
+  'solid', 'gradient', 'duotone', 'flare', 'rainbow', 'shimmer', 'holographic',
+  'chrome', 'glow', 'neon', 'outline', 'shadow', 'sticker', 'glitch', 'stripe',
+  'emboss', 'underline',
 ];
 
 /* How many hex colours a style actually paints with, straight from the
@@ -12290,7 +12388,8 @@ function rtEffectColors(effectId) {
   const list = (RA && RA.registry && RA.registry.title_effects) || [];
   const found = list.find(e => e.id === effectId);
   if (found && typeof found.colors === 'number') return Math.max(0, Math.min(2, found.colors));
-  return ['gradient', 'duotone', 'shimmer', 'chrome', 'neon', 'shadow', 'underline'].includes(effectId) ? 2 : 1;
+  return ['gradient', 'duotone', 'shimmer', 'chrome', 'neon', 'shadow', 'underline',
+    'flare', 'stripe', 'glitch', 'sticker', 'holographic'].includes(effectId) ? 2 : 1;
 }
 
 function rtDraft() {
@@ -12313,8 +12412,21 @@ function rtNewId() { return 'title_' + Math.random().toString(36).slice(2, 8); }
 
 function rtDefaultStyle() {
   return { effect: 'solid', colors: ['#6ea8c9', '#c98f26'], font: '', weight: 800, size: 11,
-    spacing: 0.5, italic: false, uppercase: true, fill: 'soft', radius: 999,
-    pad_x: 8, pad_y: 3, border: 0, glow: 0 };
+    spacing: 0.5, italic: false, uppercase: true, case: 'upper', fill: 'soft', radius: 999,
+    pad_x: 8, pad_y: 3, border: 0, border_style: 'solid', glow: 0, rotate: 0,
+    pill_gradient: false, icon: '' };
+}
+
+/* upper / lower / Title / exactly as typed. `uppercase` is the old switch and
+   is still written alongside, so a style saved before this existed behaves. */
+function rtTextFor(style, raw) {
+  const st = style || {};
+  const mode = st.case || (st.uppercase === false ? 'none' : 'upper');
+  if (mode === 'lower') return raw.toLowerCase();
+  if (mode === 'none') return raw;
+  if (mode === 'title') return raw.replace(/[A-Za-z][A-Za-z'\u2019-]*/g,
+    w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  return raw.toUpperCase();
 }
 
 function rtBlank(label) {
@@ -12329,17 +12441,22 @@ function rtTagStyle(style) {
   const a = /^#[0-9a-fA-F]{3,8}$/.test(colors[0] || '') ? colors[0] : '#6ea8c9';
   const b = /^#[0-9a-fA-F]{3,8}$/.test(colors[1] || '') ? colors[1] : a;
   const fill = ['soft', 'solid', 'outline', 'plain'].includes(st.fill) ? st.fill : 'soft';
-  const border = Math.max(0, Math.min(4, Number(st.border) || 0)) || (fill === 'outline' ? 1 : 0);
+  const dash = ['solid', 'dashed', 'dotted'].includes(st.border_style) ? st.border_style : 'solid';
+  // A dashed border at 0px would be invisible, so asking for one implies a
+  // visible width — the member page's builder says the same thing.
+  const border = Math.max(0, Math.min(4, Number(st.border) || 0))
+    || (fill === 'outline' || dash !== 'solid' ? 1 : 0);
   const size = Math.max(8, Math.min(22, Number(st.size) || 11));
   const glow = Math.max(0, Math.min(24, Number(st.glow) || 0)) || (st.effect === 'glow' ? 14 : 0);
   const font = /^[A-Za-z0-9 '\-]+$/.test(String(st.font || '')) ? `font-family:'${st.font}',sans-serif;` : '';
+  const rotate = Math.max(-14, Math.min(14, Math.round(Number(st.rotate) || 0)));
   const vars = `--tg-a:${a};--tg-b:${b};`
     + `--tg-size:${size}px;--tg-weight:${Math.max(400, Math.min(900, Number(st.weight) || 800))};`
     + `--tg-spacing:${Math.max(0, Math.min(3, Number(st.spacing) || 0))}px;`
     + `--tg-pad-x:${Math.max(0, Math.min(24, Number(st.pad_x) || 0))}px;`
     + `--tg-pad-y:${Math.max(0, Math.min(12, Number(st.pad_y) || 0))}px;`
     + `--tg-radius:${Math.max(0, Math.min(999, Number(st.radius) || 0))}px;`
-    + `--tg-bw:${border}px;--tg-glow:${glow}px;`;
+    + `--tg-bw:${border}px;--tg-bw-style:${dash};--tg-rot:${rotate}deg;--tg-glow:${glow}px;`;
   const effect = RT_EFFECTS.includes(st.effect) ? st.effect : 'solid';
   return { fill, effect, css: font + vars + (st.italic ? 'font-style:italic;' : '') };
 }
@@ -12348,10 +12465,14 @@ function rtTagHtml(title) {
   if (!title || !String(title.label || '').trim()) return '';
   // A quick-add preset only carries a colour and an effect, so fill the rest
   // in here as well — the badge must never look half-dressed.
-  const s = rtTagStyle({ ...rtDefaultStyle(), ...(title.style || {}) });
-  const raw = `${title.prefix || ''}${title.label}${title.suffix || ''}`;
-  const text = (title.style && title.style.uppercase === false) ? raw : raw.toUpperCase();
-  return `<span class="staff-tag tg-${s.fill}" style="${s.css}"><span class="staff-tag-label tg-${s.effect}">${esc(text)}</span></span>`;
+  const st = { ...rtDefaultStyle(), ...(title.style || {}) };
+  const s = rtTagStyle(st);
+  const raw = `${title.prefix || ''}${title.label || ''}${title.suffix || ''}`;
+  const icon = String(st.icon || '').trim();
+  const tilt = Math.max(-14, Math.min(14, Math.round(Number(st.rotate) || 0))) ? ' tg-tilt' : '';
+  const pill = `staff-tag tg-${s.fill}${st.pill_gradient ? ' tg-pillgrad' : ''}${tilt}`;
+  const glyph = icon ? `<span class="staff-tag-icon">${esc(icon)}</span>` : '';
+  return `<span class="${pill}" style="${s.css}">${glyph}<span class="staff-tag-label tg-${s.effect}">${esc(rtTextFor(st, raw))}</span></span>`;
 }
 
 /* --- html pieces --- */
@@ -12506,10 +12627,17 @@ function rtEditorHtml(t) {
           </div>
         </div>
       </div>
-      <div class="rt-seg" style="margin-top:10px">
-        <button class="${st.uppercase === false ? '' : 'on'}" data-rt-flag="uppercase">Uppercase</button>
+      <span class="rt-lab" style="margin-top:12px">Letter case</span>
+      <div class="rt-seg">
+        ${[['upper', 'UPPER'], ['lower', 'lower'], ['title', 'Title'], ['none', 'As typed']]
+          .map(([id, label]) => `<button data-rt-opt="case|${id}" class="${(st.case || (st.uppercase === false ? 'none' : 'upper')) === id ? 'on' : ''}">${label}</button>`).join('')}
+      </div>
+      <div class="rt-seg" style="margin-top:8px">
         <button class="${st.italic ? 'on' : ''}" data-rt-flag="italic">Italic</button>
       </div>
+      <label class="rt-lab" for="rt-icon" style="margin-top:12px">Icon in front of the text</label>
+      <input class="rt-in" id="rt-icon" maxlength="4" value="${esc(st.icon || '')}" placeholder="&#128081; &#9733;">
+      <div class="rt-note">An emoji or a symbol, up to four characters. Leave it empty for none.</div>
     </div>
 
     <div class="rt-card">
@@ -12521,6 +12649,14 @@ function rtEditorHtml(t) {
       <div class="rt-seg">
         ${fills.map(f => `<button data-rt-fill="${esc(f.id)}" class="${st.fill === f.id ? 'on' : ''}" title="${esc(f.desc || '')}">${esc(f.label)}</button>`).join('')}
       </div>
+      <span class="rt-lab" style="margin-top:12px">Pill extras</span>
+      <div class="rt-seg">
+        <button data-rt-flag="pill_gradient" class="${st.pill_gradient ? 'on' : ''}" title="Paint the pill itself with both colours.">Two-colour pill</button>
+        <button data-rt-opt="border_style|solid" class="${(st.border_style || 'solid') === 'solid' ? 'on' : ''}">Solid edge</button>
+        <button data-rt-opt="border_style|dashed" class="${st.border_style === 'dashed' ? 'on' : ''}">Dashed edge</button>
+        <button data-rt-opt="border_style|dotted" class="${st.border_style === 'dotted' ? 'on' : ''}">Dotted edge</button>
+      </div>
+      <div class="rt-note" style="margin-top:6px">The edge controls need a border width — dashed and dotted switch one on for you.</div>
     </div>
 
     <div class="rt-card">
@@ -12556,6 +12692,7 @@ function rtEditorHtml(t) {
       ${rtSlider('rt-radius', 'Rounding', Math.min(32, st.radius >= 32 ? 32 : (st.radius || 0)), 0, 32, 1)}
       ${rtSlider('rt-border', 'Border', Math.max(0, Math.min(4, st.border || 0)), 0, 4, 1)}
       ${rtSlider('rt-glow', 'Glow', Math.max(0, Math.min(24, st.glow || 0)), 0, 24, 1)}
+      ${rtSlider('rt-rotate', 'Tilt', Math.max(-14, Math.min(14, Math.round(st.rotate || 0))), -14, 14, 1)}
     </div>
 
     <div class="rt-card rt-grid2">
@@ -12601,7 +12738,7 @@ function rtMarkDirty() { RA.dirty = true; }
 function rtRenderText(title) {
   if (!title) return '';
   const raw = `${title.prefix || ''}${title.label || ''}${title.suffix || ''}`;
-  return (title.style && title.style.uppercase === false) ? raw : raw.toUpperCase();
+  return rtTextFor(title.style || {}, raw);
 }
 
 /* The preview rail of the editor modal: the badge on a member row, plus what
@@ -12660,6 +12797,26 @@ function rtSync() {
     const flag = b.dataset.rtFlag;
     b.classList.toggle('on', flag === 'uppercase' ? st.uppercase !== false : !!st[flag]);
   });
+  document.querySelectorAll('[data-rt-opt]').forEach(b => {
+    const [field, value] = String(b.dataset.rtOpt || '').split('|');
+    if (field === 'case') {
+      b.classList.toggle('on', (st.case || (st.uppercase === false ? 'none' : 'upper')) === value);
+    } else if (field === 'border_style') {
+      b.classList.toggle('on', (st.border_style || 'solid') === value);
+    } else {
+      b.classList.toggle('on', String(st[field] || '') === value);
+    }
+  });
+  const iconInput = $('rt-icon');
+  if (iconInput && document.activeElement !== iconInput) iconInput.value = st.icon || '';
+  // Presets and restored drafts move the sliders without an input event, so
+  // the tilt control is re-read here like the icon field is.
+  const tilt = $('rt-rotate');
+  if (tilt && document.activeElement !== tilt) {
+    tilt.value = Math.max(-14, Math.min(14, Math.round(Number(st.rotate) || 0)));
+    const tiltOut = $('rt-rotate-val');
+    if (tiltOut) tiltOut.textContent = tilt.value;
+  }
 
   const hint = $('rt-render-text');
   if (hint) hint.textContent = rtRenderText(t);
@@ -12901,12 +13058,31 @@ function rtWireEditor(body) {
   if (priority) {
     priority.oninput = () => rtSet({ priority: Number(priority.value) || 0 }, false);
   }
+  const icon = $('rt-icon');
+  if (icon) {
+    icon.oninput = () => rtPatchStyle({ icon: icon.value.slice(0, 4) }, null);
+  }
 
   body.querySelectorAll('[data-rt-effect]').forEach(btn => {
     btn.onclick = () => rtPatchStyle({ effect: btn.dataset.rtEffect }, null);
   });
   body.querySelectorAll('[data-rt-fill]').forEach(btn => {
     btn.onclick = () => rtPatchStyle({ fill: btn.dataset.rtFill }, null);
+  });
+  // Segmented choices that are neither a colour nor a fill: letter case and the
+  // edge style. They share one attribute so a new one only needs a button.
+  body.querySelectorAll('[data-rt-opt]').forEach(btn => {
+    btn.onclick = () => {
+      const [field, value] = String(btn.dataset.rtOpt || '').split('|');
+      if (!field || !value) return;
+      const patch = { [field]: value };
+      // Dashed and dotted draw nothing at a width of zero, so asking for one
+      // turns a visible border on rather than silently doing nothing.
+      if (field === 'border_style' && value !== 'solid'
+          && !(Number((rtSelected().style || {}).border) || 0)) patch.border = 1;
+      if (field === 'case') patch.uppercase = value === 'upper';
+      rtPatchStyle(patch, null);
+    };
   });
   body.querySelectorAll('[data-rt-flag]').forEach(btn => {
     btn.onclick = () => {
@@ -12948,6 +13124,7 @@ function rtWireEditor(body) {
   rtSliderBind('rt-radius', 'radius');
   rtSliderBind('rt-border', 'border');
   rtSliderBind('rt-glow', 'glow');
+  rtSliderBind('rt-rotate', 'rotate');
 
   const fontBtn = $('rt-font-btn');
   if (fontBtn) {
