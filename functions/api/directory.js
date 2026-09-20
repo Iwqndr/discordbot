@@ -5,6 +5,14 @@
 // one anon may see.
 //
 // The bot drops bots before syncing, so there is no `bot` column to filter on.
+//
+// One server at a time: the admin panel picks which server the member page
+// shows (Owner Panel > Member Management > Member site server) and stores it in
+// `panel_settings`; the bot mirrors only that server's roster and stamps every
+// row with its id. The filter below is what keeps the other server's people off
+// this page. Before the schema in pages/schema.sql has been run there is no
+// column to filter on, so the read falls back to the whole table rather than
+// answering with an empty roster.
 
 import {
   ok,
@@ -24,9 +32,28 @@ const COLUMNS = [
   "created_at",
 ].join(",");
 
+const HUB_KEY = "hub_guild";
+
+/** The server the member page shows, or null when none has been picked. */
+async function siteServer(env) {
+  const res = await supa(env, `panel_settings?select=value&key=eq.${HUB_KEY}&limit=1`);
+  if (!res.ok || !Array.isArray(res.rows) || !res.rows.length) return null;
+  const value = res.rows[0].value;
+  if (!value || typeof value !== "object" || !value.guild_id) return null;
+  return {
+    guild_id: String(value.guild_id),
+    guild_name: String(value.guild_name || ""),
+  };
+}
+
 async function handleGet({ env }) {
-  const [res, profileRes, economyRes] = await Promise.all([
-    supa(env, `members?select=${COLUMNS}&order=display_name.asc`),
+  const hub = await siteServer(env);
+  const order = "order=display_name.asc";
+  const membersPath = `members?select=${COLUMNS}&${order}`
+    + (hub ? `&guild_id=eq.${encodeURIComponent(hub.guild_id)}` : "");
+
+  const [scopedRes, profileRes, economyRes] = await Promise.all([
+    supa(env, membersPath),
     // The member page saves its own bio / name styling to member_profiles,
     // which the bot never touches. Without this merge those changes stay
     // invisible everywhere the roster is drawn.
@@ -36,10 +63,17 @@ async function handleGet({ env }) {
     supa(env, "economy?select=user_id,balance,bank,xp,level,wins,losses,streak"),
   ]);
 
+  let res = scopedRes;
+  if (hub && (!res.ok || !Array.isArray(res.rows))) {
+    // The column is missing (pages/schema.sql has not been run). Everyone is a
+    // better answer than nobody, and the next roster sync stamps the rows anyway.
+    res = await supa(env, `members?select=${COLUMNS}&${order}`);
+  }
+
   if (!res.ok || !Array.isArray(res.rows)) {
     // The page falls back to its own Supabase fetch (and then to an empty
     // roster), so an empty list is a safe answer rather than an error.
-    return ok({ members: [] });
+    return ok({ members: [], hub });
   }
 
   const profiles = new Map();
@@ -92,7 +126,7 @@ async function handleGet({ env }) {
     };
   });
 
-  return ok({ members });
+  return ok({ members, hub });
 }
 
 export const onRequestGet = route("api/directory", handleGet);

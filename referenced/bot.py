@@ -59,9 +59,12 @@ from supabase_helper import (
     increment_command_usage,
     upsert_members,
     delete_member,
+    delete_members_outside_guild,
     fetch_all_member_ids,
     fetch_member,
     fetch_stored_banners,
+    fetch_hub_setting,
+    save_hub_setting,
 )
 
 TOKEN = DISCORD_TOKEN
@@ -70,6 +73,53 @@ TOKEN = DISCORD_TOKEN
 _verification_restored = False
 # Same idea for the ticket panel, which is its own persistent view.
 _ticket_panel_restored = False
+
+# ===========================================================================
+# THE MEMBER SITE'S SERVER (the "hub guild")
+#
+# The public member page shows ONE server, chosen in Owner Panel > Member
+# Management > Member site server. This is that choice, cached in memory so the
+# member events below can decide whether they are even relevant without a
+# network read:
+#
+#   hub set      -> only that server's members are mirrored to Supabase
+#   hub unset    -> no filter at all, which is how the bot behaved before the
+#                   selector existed (the page then shows every row it has)
+#
+# `ROSTER_STATE` is the progress the panel polls while a switch is running.
+# ===========================================================================
+HUB = {"guild_id": "", "guild_name": "", "loaded_at": 0.0}
+ROSTER_STATE = {
+    "state": "idle",       # idle | running | done | error
+    "guild_id": "",
+    "guild_name": "",
+    "done": 0,
+    "total": 0,
+    "members": 0,
+    "removed": 0,
+    "error": "",
+    "at": 0.0,
+}
+_HUB_REFRESH_LOCK = None
+
+
+def hub_guild_id() -> str:
+    """The server the member page shows, or "" when none has been picked."""
+    return str(HUB.get("guild_id") or "")
+
+
+def refresh_hub_setting() -> str:
+    """Re-read the stored choice. Blocking, so callers on the event loop should
+    hand this to `asyncio.to_thread` (the roster sync does)."""
+    value, err = fetch_hub_setting()
+    if err:
+        debug(f"Member site server could not be read: {err}")
+        return hub_guild_id()
+    gid = str((value or {}).get("guild_id") or "") if isinstance(value, dict) else ""
+    HUB["guild_id"] = gid
+    HUB["guild_name"] = str((value or {}).get("guild_name") or "") if isinstance(value, dict) else ""
+    HUB["loaded_at"] = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    return gid
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -177,7 +227,22 @@ async def staff_only_gate(ctx: commands.Context):
     return any(getattr(perms, p, False) for p in STAFF_PERMS)
 
 
-async def _build_member_row(member: discord.Member, keep_banner: str = "") -> dict:
+def _member_guild_id(member, guild_id: str = "") -> str:
+    """Which server a mirrored row describes.
+
+    The roster sync knows this and passes it once per server. The fallback to
+    the member's own guild covers a caller that only holds the member; a member
+    object with no guild at all (which Discord never produces for a guild
+    member) stamps an empty value rather than raising, and an unstamped row is
+    simply not shown once a server has been picked.
+    """
+    if guild_id:
+        return str(guild_id)
+    guild = getattr(member, "guild", None)
+    return str(getattr(guild, "id", "") or "")
+
+
+async def _build_member_row(member: discord.Member, keep_banner: str = "", guild_id: str = "") -> dict:
     # Every role the member actually wears, highest first, so the site can show
     # what somebody really has. The tier is only decorative: known staff roles
     # keep their configured rank, anything else sorts below them, and @everyone
@@ -215,6 +280,9 @@ async def _build_member_row(member: discord.Member, keep_banner: str = "") -> di
 
     return {
         "user_id": str(member.id),
+        # Which server this row describes, so the member page can show one at a
+        # time instead of blending whichever server wrote last.
+        "guild_id": _member_guild_id(member, guild_id),
         "username": member.name,
         "display_name": member.display_name,
         "avatar_url": _avatar_of(member),
@@ -242,6 +310,12 @@ def _avatar_of(member) -> str:
 
 async def _push_member_to_supabase(member: discord.Member):
     if member.bot:
+        return
+    # A member event in a server that is not the one the member page shows is
+    # not ours to record: writing it would put that server's nickname and roles
+    # in front of the page that is supposed to be showing the other one.
+    hub = hub_guild_id()
+    if hub and str(member.guild.id) != hub:
         return
     try:
         # Whatever banner is stored wins when Discord has none to offer, so a
@@ -297,37 +371,57 @@ async def slogs(ctx: commands.Context):
         )
 
 
-@bot.command(name="syncmembers")
-@commands.has_permissions(administrator=True)
-async def syncmembers(ctx: commands.Context):
-    await try_delete(ctx)
+# ===========================================================================
+# ROSTER SYNC — one server at a time
+# ===========================================================================
 
-    msg = await ctx.send("> Syncing members to Supabase. This may take a moment...")
 
-    current_members = {}
+async def build_roster_rows(guild, progress=None):
+    """Every human member of `guild`, as rows ready to upsert.
+
+    Bots are dropped here rather than filtered later, so every reader of the
+    table can treat a row as a person.
+    """
     # One read for the whole guild rather than one per member: the stored banners
     # are needed because Discord returns none for anybody without Nitro.
-    stored_banners = fetch_stored_banners()
-    async with ctx.typing():
-        for member in ctx.guild.members:
-            if member.bot:
-                continue
-            current_members[str(member.id)] = await _build_member_row(
-                member, stored_banners.get(str(member.id))
-            )
+    stored_banners = await asyncio.to_thread(fetch_stored_banners)
+    rows = []
+    for member in guild.members:
+        if member.bot:
+            continue
+        rows.append(
+            await _build_member_row(member, stored_banners.get(str(member.id)), guild.id)
+        )
+        if progress:
+            progress(len(rows))
+    return rows
 
-    existing_ids = fetch_all_member_ids()
+
+async def sync_guild_roster(guild, prune=False, progress=None):
+    """Push `guild`'s roster to Supabase and report what happened.
+
+    `prune` also drops the rows that came from a *different* server, which is
+    what turns the mirror into a single server's roster instead of a blend. It
+    is only ever on when this guild is (or is about to become) the server the
+    member page shows.
+
+    Returns a summary dict; it raises nothing, because both callers want to
+    report a failure rather than take the bot down with it.
+    """
+    current_members = {}
+    rows = await build_roster_rows(guild, progress)
+    for row in rows:
+        current_members[row["user_id"]] = row
+
+    existing_ids = await asyncio.to_thread(fetch_all_member_ids, guild.id if prune else None)
     current_ids = set(current_members.keys())
-
-    to_upsert = list(current_members.values())
-    to_delete = existing_ids - current_ids
 
     sent = 0
     failed = 0
     batch_size = 100
-    for i in range(0, len(to_upsert), batch_size):
-        batch = to_upsert[i:i + batch_size]
-        status, raw = upsert_members(batch)
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        status, raw = await asyncio.to_thread(upsert_members, batch)
         if 200 <= status < 300:
             sent += len(batch)
         else:
@@ -335,25 +429,185 @@ async def syncmembers(ctx: commands.Context):
             warn(f"Sync upsert failed: {status} {raw}")
 
     removed = 0
-    for uid in to_delete:
-        status, _ = delete_member(uid)
+    for uid in existing_ids - current_ids:
+        status, _ = await asyncio.to_thread(delete_member, uid)
         if 200 <= status < 300:
             removed += 1
+
+    pruned = 0
+    prune_error = ""
+    if prune:
+        ok, pruned, prune_error = await asyncio.to_thread(
+            delete_members_outside_guild, guild.id
+        )
+        if not ok:
+            warn(f"Roster cleanup skipped: {prune_error}")
+        elif pruned:
+            info(f"Roster cleanup: forgot {pruned} row(s) from other servers.")
+
+    return {
+        "ok": failed == 0,
+        "members": len(rows),
+        "sent": sent,
+        "failed": failed,
+        "removed": removed,
+        "pruned": pruned,
+        "error": "" if failed == 0 else f"{failed} member row(s) were rejected.",
+    }
+
+
+async def rebuild_hub_roster(guild, publish=True):
+    """Make `guild` the server the member page shows, then rebuild around it.
+
+    The setting is written LAST on purpose. The member page scopes itself to
+    whatever that setting says, so publishing it first would leave the page
+    showing an empty roster for as long as the sync took; on any failure before
+    that line the previously chosen server stays in place and nothing is lost.
+    """
+    if guild is None:
+        return {"ok": False, "error": "The bot is not in that server."}
+
+    total = len([m for m in guild.members if not m.bot])
+    if total == 0:
+        # Never publish on an empty roster: a cold member cache would wipe the
+        # member page and leave the wrong server selected.
+        return {
+            "ok": False,
+            "error": "Discord reported no members for that server, so nothing was changed.",
+        }
+
+    ROSTER_STATE.update({
+        "state": "running",
+        "guild_id": str(guild.id),
+        "guild_name": guild.name,
+        "done": 0,
+        "total": total,
+        "members": 0,
+        "removed": 0,
+        "error": "",
+        "at": datetime.datetime.now(datetime.timezone.utc).timestamp(),
+    })
+
+    def progress(done):
+        ROSTER_STATE["done"] = int(done)
+
+    summary = await sync_guild_roster(guild, prune=True, progress=progress)
+    if not summary["ok"]:
+        ROSTER_STATE.update(state="error", error=summary["error"])
+        return summary
+
+    if publish:
+        value = {
+            "guild_id": str(guild.id),
+            "guild_name": guild.name,
+            "members": summary["members"],
+            "synced_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        ok, error = await asyncio.to_thread(save_hub_setting, value)
+        if not ok:
+            ROSTER_STATE.update(state="error", error=error)
+            return {"ok": False, "error": error}
+        HUB.update({
+            "guild_id": str(guild.id),
+            "guild_name": guild.name,
+            "loaded_at": datetime.datetime.now(datetime.timezone.utc).timestamp(),
+        })
+        info(f"Member site server: {guild.name} ({guild.id}) — {summary['members']} member(s) mirrored.")
+
+    ROSTER_STATE.update({
+        "state": "done",
+        "members": summary["members"],
+        "removed": summary["removed"] + summary["pruned"],
+        "error": "",
+        "at": datetime.datetime.now(datetime.timezone.utc).timestamp(),
+    })
+    return summary
+
+
+def request_hub_change(guild_id):
+    """Ask the running bot to point the member page at `guild_id`.
+
+    Called from the panel's request thread, so the work is handed to the event
+    loop instead of being run here; the panel then polls `ROSTER_STATE` for the
+    progress it prints. Returns (accepted, error).
+    """
+    gid = str(guild_id or "").strip()
+    if not gid.isdigit():
+        return False, "That is not a server id."
+    guild = bot.get_guild(int(gid))
+    if guild is None:
+        return False, "The bot is not in that server."
+    if ROSTER_STATE.get("state") == "running":
+        return False, "A switch is still running — give it a moment."
+    loop = getattr(bot, "loop", None)
+    if loop is None or not loop.is_running():
+        return False, "The bot is not connected to Discord yet. Try again in a moment."
+
+    ROSTER_STATE.update({
+        "state": "running",
+        "guild_id": gid,
+        "guild_name": guild.name,
+        "done": 0,
+        "total": len([m for m in guild.members if not m.bot]),
+        "members": 0,
+        "removed": 0,
+        "error": "",
+        "at": datetime.datetime.now(datetime.timezone.utc).timestamp(),
+    })
+    asyncio.run_coroutine_threadsafe(rebuild_hub_roster(guild), loop)
+    return True, ""
+
+
+@bot.command(name="syncmembers")
+@commands.has_permissions(administrator=True)
+async def syncmembers(ctx: commands.Context):
+    await try_delete(ctx)
+
+    msg = await ctx.send("> Syncing members to Supabase. This may take a moment...")
+
+    # Re-read the choice first: on a fresh start this is what makes the command
+    # agree with the panel about which server the member page shows.
+    hub = await asyncio.to_thread(refresh_hub_setting)
+    if hub and str(ctx.guild.id) != hub:
+        return await msg.edit(content=(
+            "> This server is not the one on the member page, so nothing was synced.\n"
+            f"> The member page currently shows **{HUB.get('guild_name') or hub}**.\n"
+            "> Change that in the Owner Panel > Member Management > Member site server."
+        ))
+
+    async with ctx.typing():
+        summary = await sync_guild_roster(ctx.guild, prune=bool(hub))
 
     try:
         await msg.edit(content=(
             f"> Sync complete.\n"
-            f"> Upserted: **{sent}** member(s)\n"
-            f"> Failed: **{failed}**\n"
-            f"> Removed (left server): **{removed}**"
+            f"> Upserted: **{summary['sent']}** member(s)\n"
+            f"> Failed: **{summary['failed']}**\n"
+            f"> Removed (left server): **{summary['removed']}**"
+            + (f"\n> Forgotten (other servers): **{summary['pruned']}**" if summary["pruned"] else "")
         ))
     except Exception:
-        await ctx.send(f"> Sync complete. Upserted {sent}, failed {failed}, removed {removed}.")
+        await ctx.send(
+            f"> Sync complete. Upserted {summary['sent']}, failed {summary['failed']}, "
+            f"removed {summary['removed']}."
+        )
 
 
 @bot.event
 async def on_ready():
     ok(f"Logged in as {bot.user} (ID: {bot.user.id})")
+
+    # Which server the member page shows, read before any member event can fire
+    # so the mirror only ever records that server. Off the loop, because it is a
+    # blocking read and the gateway is already carrying traffic by now.
+    try:
+        hub = await asyncio.to_thread(refresh_hub_setting)
+        if hub:
+            info(f"Member site server: {HUB.get('guild_name') or hub} ({hub}).")
+        else:
+            debug("Member site server: none picked yet — the member page shows every row.")
+    except Exception as e:
+        warn(f"Member site server could not be read: {e}")
     # The bot is prefix-first, so any slash command left behind by an older
     # build is wiped here. What this file registers itself (/apply) is kept,
     # which is why this is a clear-and-restore rather than a blanket clear.
@@ -2648,6 +2902,11 @@ async def on_member_join(member: discord.Member):
 async def on_member_remove(member: discord.Member):
     if member.bot:
         return
+    # Leaving a server the member page does not show is not the page's business:
+    # the person may well still be in the one it does show.
+    hub = hub_guild_id()
+    if hub and str(member.guild.id) != hub:
+        return
     try:
         delete_member(str(member.id))
     except Exception as e:
@@ -2687,7 +2946,12 @@ async def on_user_update(before: discord.User, after: discord.User):
         and before.name == after.name
     ):
         return
+    # Only the server the member page shows needs rewriting. Doing this for every
+    # guild is what used to overwrite a row with another server's nickname.
+    hub = hub_guild_id()
     for guild in list(bot.guilds):
+        if hub and str(guild.id) != hub:
+            continue
         member = guild.get_member(after.id)
         if member is not None:
             await _push_member_to_supabase(member)

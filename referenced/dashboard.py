@@ -4098,6 +4098,83 @@ def api_owner_access():
     return jsonify(_dash_perms_payload())
 
 
+# ==========================================================
+# MEMBER SITE SERVER (the hub)
+# ==========================================================
+# Which server the public member page shows. Owner-key territory, because the
+# choice is site-wide rather than per-server: the panel's own server picker
+# changes what THIS panel edits, this changes what /member renders.
+#
+# The write is a rebuild, not a flag: the bot mirrors one server's roster into
+# `members`, stamps every row with that server, forgets the rest and only then
+# publishes the choice (see request_hub_change in bot.py). The panel polls the
+# payload below while that runs, which is how the button reports progress.
+
+
+def _hub_payload():
+    from bot import HUB, ROSTER_STATE, hub_guild_id
+    from supabase_helper import fetch_all_member_ids, members_guild_supported
+
+    gid = hub_guild_id()
+    guilds = []
+    for guild in bot.guilds:
+        guilds.append({
+            "guild_id": str(guild.id),
+            "guild_name": guild.name,
+            "icon": str(guild.icon.url) if guild.icon else "",
+            "members": int(guild.member_count or len(guild.members) or 0),
+            "selected": str(guild.id) == gid,
+        })
+    guilds.sort(key=lambda g: (not g["selected"], -g["members"], g["guild_name"].lower()))
+
+    mirrored = None
+    sql_ready = members_guild_supported()
+    if gid and sql_ready:
+        try:
+            mirrored = len(fetch_all_member_ids(gid))
+        except Exception as e:  # noqa: BLE001 - the count is decoration, never fatal
+            print(f"[hub] mirrored member count failed: {e}")
+
+    sync = dict(ROSTER_STATE)
+    # A switch that died with the process would otherwise read as "running" here
+    # for ever; nothing survives longer than a full roster pull.
+    if sync.get("state") == "running" and sync.get("at") and time.time() - sync["at"] > 900:
+        sync["state"] = "error"
+        sync["error"] = "That switch stopped without finishing. Pick the server again."
+
+    return {
+        "guild_id": gid,
+        "guild_name": HUB.get("guild_name") or "",
+        "selected": bool(gid),
+        "mirrored": mirrored,
+        "sql_ready": sql_ready,
+        "guilds": guilds,
+        "sync": sync,
+    }
+
+
+@app.route("/api/hub", methods=["GET", "POST"])
+def api_hub():
+    if not _owner_unlocked():
+        return _fail("Owner key required to choose the member site's server.", 403)
+
+    if request.method == "POST":
+        data = request.json or {}
+        from bot import request_hub_change
+
+        accepted, error = request_hub_change(data.get("guild_id"))
+        if not accepted:
+            return _fail(error, 409)
+        return jsonify({
+            "status": "success",
+            "pending": True,
+            "message": "Rebuilding the member page roster for that server…",
+            **_hub_payload(),
+        })
+
+    return jsonify(_hub_payload())
+
+
 def _access_catalog():
     """Section and capability names, for explaining a grant to its owner.
 

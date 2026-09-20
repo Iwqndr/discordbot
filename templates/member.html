@@ -2284,7 +2284,7 @@
   <section class="view" id="view-members" hidden>
     <div class="panel">
       <div class="panel-title">Members</div>
-      <p class="panel-sub">Search anyone in the server by name, @username or user ID.</p>
+      <p class="panel-sub" id="memberSiteLabel">Search anyone in the server by name, @username or user ID.</p>
       <div class="ticket-toolbar" style="margin-bottom:12px">
         <input class="q-input" id="memberQuery" placeholder="Search name, @username or user ID" autocomplete="off" spellcheck="false">
         <button class="btn" id="memberRefresh">Reload</button>
@@ -2989,17 +2989,92 @@ async function fetchUsage() {
   }
 }
 
+/* ============================================================
+   WHICH SERVER THIS PAGE SHOWS
+   The admin panel (Owner Panel > Member Management > Member site server)
+   picks one server and the bot mirrors only that server's roster, stamping
+   every row with its id. This reads the choice so the page can ask for those
+   rows and name the server in the UI.
+
+   Nothing here is load-bearing: if the setting row, the table or the column
+   is missing the page falls back to reading the whole table, which is how it
+   behaved before the selector existed.
+   ============================================================ */
+let SITE_SERVER = null;
+let SITE_SERVER_PROMISE = null;
+
+function loadSiteServer() {
+  if (!SITE_SERVER_PROMISE) {
+    SITE_SERVER_PROMISE = (async () => {
+      try {
+        const rows = await supaFetch("panel_settings?select=value&key=eq.hub_guild&limit=1");
+        const value = rows && rows[0] && rows[0].value;
+        if (value && value.guild_id) {
+          SITE_SERVER = {
+            guild_id: String(value.guild_id),
+            guild_name: String(value.guild_name || ""),
+          };
+        }
+      } catch (e) {
+        console.warn("[site] could not read which server this page shows", e);
+        // Allow a later call to try again rather than pinning the failure for
+        // the rest of the session.
+        SITE_SERVER_PROMISE = null;
+      }
+      return SITE_SERVER;
+    })();
+  }
+  return SITE_SERVER_PROMISE;
+}
+
+function siteServerName() {
+  return SITE_SERVER && SITE_SERVER.guild_name ? SITE_SERVER.guild_name : "";
+}
+
+function adoptSiteServer(info) {
+  if (!info || !info.guild_id) return;
+  SITE_SERVER = {
+    guild_id: String(info.guild_id),
+    guild_name: String(info.guild_name || ""),
+  };
+}
+
 async function loadMembers() {
   if (MEMBERS_CACHE) return MEMBERS_CACHE;
+  const base = "members?select=user_id,username,display_name,avatar_url,banner_url,bio,roles,joined_at,created_at";
+  const site = await loadSiteServer();
   try {
-    const rows = await supaFetch("members?select=user_id,username,display_name,avatar_url,banner_url,bio,roles,joined_at,created_at");
+    const rows = await supaFetch(base + (site ? `&guild_id=eq.${encodeURIComponent(site.guild_id)}` : ""));
     MEMBERS_CACHE = rows;
     return rows;
   } catch (e) {
-    console.warn("[members] fetch failed", e);
+    // A filtered read can only fail while the column is missing (schema.sql not
+    // run yet). Showing everyone beats showing nobody, so try once unfiltered.
+    if (site) {
+      try {
+        const rows = await supaFetch(base);
+        MEMBERS_CACHE = rows;
+        return rows;
+      } catch (e2) {
+        console.warn("[members] fetch failed", e2);
+      }
+    } else {
+      console.warn("[members] fetch failed", e);
+    }
     MEMBERS_CACHE = [];
     return [];
   }
+}
+
+/* The one line that tells a visitor whose roster they are looking at. */
+async function paintMemberSiteLabel() {
+  const el = document.getElementById("memberSiteLabel");
+  if (!el) return;
+  await loadSiteServer();
+  const name = siteServerName();
+  el.innerHTML = name
+    ? `Search anyone in <b>${escapeHtml(name)}</b> by name, @username or user ID.`
+    : "Search anyone in the server by name, @username or user ID.";
 }
 
 /* ============================================================
@@ -3834,7 +3909,7 @@ function showProfileEmpty(query, isUid) {
   profileContent.innerHTML = `
     <div class="profile-empty" style="padding-top: 140px;">
       <div class="profile-empty-title">No member found</div>
-      <div style="font-size: 13px;">${isUid ? "No member with UID" : "No member named"} <strong>${escapeHtml(query)}</strong> is in this server.</div>
+      <div style="font-size: 13px;">${isUid ? "No member with UID" : "No member named"} <strong>${escapeHtml(query)}</strong> is in ${escapeHtml(siteServerName() || "this server")}.</div>
     </div>
   `;
   openProfilePanel();
@@ -4047,6 +4122,7 @@ applyFilters();
 
 (async () => {
   await Promise.all([fetchUsage(), loadMembers(), loadStaffTitles()]);
+  paintMemberSiteLabel();
   fillRunCounts(document);
   // Badge rules landed after the first paint: redraw whatever is on screen.
   if (directory.loaded && hub.view === "members") renderMembers();
@@ -6344,6 +6420,9 @@ async function loadDirectory(force) {
     const res = await fetch("/api/directory");
     const data = await res.json();
     rows = (data && data.members) || [];
+    // The Worker scopes the roster with the same setting this page reads, and
+    // hands it back so the UI can name the server without a second round trip.
+    adoptSiteServer(data && data.hub);
   } catch (err) {
     rows = [];
   }
@@ -6542,7 +6621,7 @@ function renderMembers() {
       matched,
       directory.query
         ? `${matched.length} member(s) matched "${directory.query}"`
-        : `${realPeople(directory.rows).length} members in the server`
+        : `${realPeople(directory.rows).length} members in ${siteServerName() || "the server"}`
     );
   }
 }

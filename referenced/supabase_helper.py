@@ -56,20 +56,106 @@ def increment_command_usage(command_name):
     return 200 <= status < 300
 
 
+# ---------------------------------------------------------------------------
+# MEMBER ROSTER
+# ---------------------------------------------------------------------------
+# The `members` table is the mirror the public member page draws: names, avatars,
+# banners and roles, one row per person. It used to be fed by every server the
+# bot is in at once, so a nickname change in one of them rewrote the row the
+# other one was showing — which is why the page blended two servers together.
+#
+# Every row now carries the `guild_id` it came from, and only the server picked
+# in Owner Panel > Member Management > Member site server is mirrored (see
+# bot.py). Readers filter on that value; rows written before the column existed
+# carry no value and are simply rebuilt by the next roster sync.
+
+# `members.guild_id` arrives with section 8 of pages/schema.sql. Until that has
+# been run, PostgREST rejects any row that mentions it, so the first rejection
+# latches this off and the roster keeps syncing without the stamp instead of
+# failing on every write.
+_MEMBERS_GUILD_SUPPORTED = True
+_GUILD_COLUMN_WARNED = False
+
+
+def members_guild_supported():
+    """Whether this Supabase project has `members.guild_id` yet."""
+    return _MEMBERS_GUILD_SUPPORTED
+
+
+def _marks_missing_guild_column(status, raw):
+    text = str(raw or "")
+    return 400 <= status < 500 and "guild_id" in text and (
+        "PGRST204" in text or "column" in text.lower() or "schema cache" in text.lower()
+    )
+
+
 def upsert_members(rows):
+    global _MEMBERS_GUILD_SUPPORTED, _GUILD_COLUMN_WARNED
     if not rows:
         return 200, "no rows"
-    return _request(
+
+    payload = rows
+    if not _MEMBERS_GUILD_SUPPORTED:
+        payload = [{k: v for k, v in row.items() if k != "guild_id"} for row in rows]
+
+    status, raw = _request(
         "POST",
         "members",
-        data=rows,
+        data=payload,
         use_service=True,
         extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
     )
 
+    if _MEMBERS_GUILD_SUPPORTED and _marks_missing_guild_column(status, raw):
+        # One warning, then carry on without the stamp rather than dropping every
+        # member write until somebody runs the SQL.
+        _MEMBERS_GUILD_SUPPORTED = False
+        if not _GUILD_COLUMN_WARNED:
+            _GUILD_COLUMN_WARNED = True
+            print(
+                "[supabase] members.guild_id is missing — run pages/schema.sql to "
+                "let the member page show a single server."
+            )
+        payload = [{k: v for k, v in row.items() if k != "guild_id"} for row in rows]
+        return _request(
+            "POST",
+            "members",
+            data=payload,
+            use_service=True,
+            extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+        )
+
+    return status, raw
+
 
 def delete_member(user_id):
     return _request("DELETE", f"members?user_id=eq.{user_id}", use_service=True)
+
+
+def delete_members_outside_guild(guild_id):
+    """Drop every row that did not come from `guild_id` — including the rows that
+    predate the column and therefore carry no server at all.
+
+    Used when the member page is pointed at a different server, so the mirror
+    holds exactly one roster instead of a blend. Returns (ok, removed, error);
+    `removed` is what PostgREST reports back, so it is 0 on older setups where
+    the column does not exist yet — nothing is deleted in that case.
+    """
+    gid = str(guild_id or "").strip()
+    if not gid:
+        return False, 0, "No server to keep."
+    status, raw = _request(
+        "DELETE",
+        f"members?or=(guild_id.is.null,guild_id.neq.{gid})",
+        use_service=True,
+        extra_headers={"Prefer": "return=representation"},
+    )
+    if not (200 <= status < 300):
+        return False, 0, f"Supabase rejected the cleanup ({status}): {str(raw)[:160]}"
+    try:
+        return True, len(json.loads(raw)), ""
+    except Exception:
+        return True, 0, ""
 
 
 def fetch_member(user_id):
@@ -127,14 +213,96 @@ def fetch_stored_banners():
     return out
 
 
-def fetch_all_member_ids():
-    status, raw = _request("GET", "members?select=user_id", use_service=True)
+def fetch_all_member_ids(guild_id=None):
+    """Every mirrored member id, optionally only those from one server.
+
+    The guild filter is what keeps `>syncmembers` in one server from deleting the
+    other server's rows; without it a sync was a "everyone else left" sweep.
+    """
+    path = "members?select=user_id"
+    gid = str(guild_id or "").strip()
+    if gid and _MEMBERS_GUILD_SUPPORTED:
+        path += f"&guild_id=eq.{gid}"
+    status, raw = _request("GET", path, use_service=True)
     if status != 200:
         return set()
     try:
         return {row["user_id"] for row in json.loads(raw)}
     except Exception:
         return set()
+
+
+# ---------------------------------------------------------------------------
+# PANEL SETTINGS
+# ---------------------------------------------------------------------------
+# One row per panel-wide setting. The admin panel writes with the service key;
+# the member page reads `hub_guild` with the anon key to know which server it is
+# showing, which is why anon has SELECT (see section 9 of pages/schema.sql).
+
+HUB_GUILD_KEY = "hub_guild"
+
+
+def fetch_hub_setting():
+    """The server the member page shows, as stored by the panel.
+
+    Returns (value, error). `value` is None when nothing has been picked yet,
+    which is also what every caller treats as "leave the page unscoped".
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return None, "Supabase is not configured."
+    try:
+        status, raw = _request(
+            "GET",
+            f"panel_settings?key=eq.{HUB_GUILD_KEY}&select=value&limit=1",
+            use_service=True,
+        )
+    except RuntimeError as e:
+        return None, str(e)
+    if status != 200:
+        return None, (
+            f"Supabase could not be read ({status}). "
+            "If the table is missing, run pages/schema.sql."
+        )
+    try:
+        rows = json.loads(raw)
+    except Exception as e:
+        return None, f"Supabase sent something unreadable: {e}"
+    if not rows:
+        return None, ""
+    value = rows[0].get("value")
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            return None, ""
+    return (value if isinstance(value, dict) else None), ""
+
+
+def save_hub_setting(value):
+    """Publish (or clear, with None) which server the member page shows.
+
+    Returns (ok, error).
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return False, "Supabase is not configured."
+    data = value if isinstance(value, dict) else {}
+    status, raw = _request(
+        "POST",
+        f"panel_settings?on_conflict=key",
+        data={
+            "key": HUB_GUILD_KEY,
+            "value": data,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+        use_service=True,
+        extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+    )
+    if not (200 <= status < 300):
+        return False, (
+            f"Supabase rejected the setting ({status}): {str(raw)[:160]}. "
+            "Run pages/schema.sql if panel_settings does not exist yet."
+        )
+    return True, ""
 
 
 # ---------------------------------------------------------------------------

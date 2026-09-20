@@ -3701,8 +3701,10 @@
             <div class="card-sub">Media-only channels, the self-promo allowlist, and any active mass-action cooldowns.</div>
             <div class="sep"></div>
             <div class="card-sub" id="mm-summary" style="font-size:11.5px">Loading current settings…</div>
-            <div style="margin-top:14px">
+            <div class="card-sub" id="hub-summary" style="font-size:11.5px;margin-top:6px">Loading the member page's server…</div>
+            <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn btn-accent" id="open-member-management"><i data-lucide="users-round"></i> Member Management</button>
+              <button class="btn" id="open-hub-server"><i data-lucide="server"></i> Member site server</button>
             </div>
           </div>
 
@@ -4219,7 +4221,7 @@
       <div class="ra-side-head">
         <div class="ra-mark"><i data-lucide="users-round"></i></div>
         <div class="ra-side-name">Member Management</div>
-        <div class="ra-side-sub">Channel flags and limits</div>
+        <div class="ra-side-sub">Site server, channel flags and limits</div>
       </div>
       <nav class="ra-nav" id="mm-nav"></nav>
     </aside>
@@ -13878,6 +13880,135 @@ document.addEventListener('keydown', (e) => {
 if ($('re-save')) $('re-save').onclick = () => reSave(RA.editorRole || RA.roleId);
 
 /* ============================================================
+   MEMBER SITE SERVER  (Owner Panel)
+   The public /member page shows exactly one server. Picking it here
+   asks the bot to rebuild its roster around that server, so this
+   polls until the rebuild ends rather than claiming it was instant.
+   ============================================================ */
+
+const HUB = { loaded: false, inflight: null, data: null, poll: null };
+
+function hubRunning() {
+  const s = HUB.data && HUB.data.sync;
+  return !!(s && s.state === 'running');
+}
+
+async function loadHub() {
+  if (!state.ownerAuthenticated) return null;
+  if (HUB.inflight) return HUB.inflight;
+  HUB.inflight = (async () => {
+    const data = await api('/api/hub');
+    HUB.inflight = null;
+    // The read answers with the payload itself; only a refusal carries `status`.
+    if (data && !data.status) { HUB.data = data; HUB.loaded = true; }
+    hubPaint();
+    return HUB.data;
+  })();
+  return HUB.inflight;
+}
+
+/* Poll while a switch runs — the roster is only settled once it ends. */
+function hubPoll(on) {
+  if (!on) {
+    if (HUB.poll) clearInterval(HUB.poll);
+    HUB.poll = null;
+    return;
+  }
+  if (HUB.poll) return;
+  HUB.poll = setInterval(async () => {
+    await loadHub();
+    if (!hubRunning()) hubPoll(false);
+  }, 2000);
+}
+
+function hubPaint() {
+  const el = $('hub-summary');
+  const d = HUB.data;
+  if (el) {
+    if (!HUB.loaded || !d) {
+      el.textContent = "Loading the member page's server…";
+    } else if (hubRunning()) {
+      el.textContent = `Rebuilding the roster for ${d.sync.guild_name || 'the new server'}…`;
+    } else if (d.selected) {
+      el.innerHTML = `Member page shows <b>${esc(d.guild_name || d.guild_id)}</b>`
+        + (typeof d.mirrored === 'number'
+          ? ` · <b>${d.mirrored.toLocaleString()}</b> member row${d.mirrored === 1 ? '' : 's'}` : '') + '.';
+    } else {
+      el.textContent = 'No server picked yet — the member page shows every row it has.';
+    }
+  }
+  if (MM.page === 'server') mmRenderBody();
+}
+
+function mmServerHtml() {
+  const d = HUB.data;
+  if (!HUB.loaded || !d) {
+    return Array.from({ length: 3 }, () => '<div class="am-skeleton row"></div>').join('');
+  }
+  const sync = d.sync || {};
+  const running = sync.state === 'running';
+
+  const status = running
+    ? `<div class="mm-note">Rebuilding the roster for <b>${esc(sync.guild_name || 'the new server')}</b> — `
+      + `<b>${Number(sync.done || 0).toLocaleString()}</b> of ${Number(sync.total || 0).toLocaleString()} member${Number(sync.total) === 1 ? '' : 's'} read. `
+      + 'The page switches over the moment it finishes.</div>'
+    : (sync.state === 'error' && sync.error)
+      ? `<div class="mm-note" style="color:var(--bad)">${esc(sync.error)}</div>`
+      : d.selected
+        ? `<div class="mm-note">Live: <b>${esc(d.guild_name || d.guild_id)}</b>`
+          + (typeof d.mirrored === 'number'
+            ? ` · ${d.mirrored.toLocaleString()} member row${d.mirrored === 1 ? '' : 's'} mirrored` : '') + '.</div>'
+        : '<div class="mm-note">Nothing picked yet, so the page still shows every row in the table — including the other server. Pick one below to scope it.</div>';
+
+  const sqlNote = d.sql_ready ? '' : '<div class="mm-note" style="color:var(--warn)">Run <b>pages/schema.sql</b> in Supabase first: without it a row carries no server, so the page cannot tell the two rosters apart.</div>';
+
+  const list = (d.guilds || []).length
+    ? `<div class="mm-list">${(d.guilds || []).map((g, i) => `
+      <button class="row srv-row ${g.selected ? 'selected' : ''}" style="--i:${i}" data-hub-pick="${esc(g.guild_id)}" ${running ? 'disabled' : ''}>
+        ${g.icon
+          ? `<img class="avatar" src="${esc(g.icon)}" alt="">`
+          : `<span class="avatar" style="display:grid;place-items:center;font-weight:700">${esc(String(g.guild_name || '?').slice(0, 1))}</span>`}
+        <span style="flex:1;min-width:0">
+          <span style="display:block;font-weight:700">${esc(g.guild_name)}</span>
+          <span class="mono card-sub" style="font-size:11px">${esc(g.guild_id)}</span>
+        </span>
+        <span class="card-sub" style="font-size:11px">${(Number(g.members) || 0).toLocaleString()} members</span>
+        ${g.selected ? '<i data-lucide="check" style="width:15px;height:15px;color:var(--accent-dark)"></i>' : ''}
+      </button>`).join('')}</div>`
+    : amEmpty('server', 'No servers to offer', 'The bot is not in any server it can read yet.');
+
+  return `
+    <div class="mm-lead">
+      <div>
+        <div class="mm-h">Member site server</div>
+        <div class="card-sub">The public member page shows <b>this</b> server's people, roles and ranks. Picking one rebuilds the roster and forgets the other server's rows — it saves the moment you click, and the page switches over when the rebuild finishes.</div>
+      </div>
+    </div>
+    ${status}
+    ${sqlNote}
+    ${list}`;
+}
+
+async function hubSelect(guildId) {
+  if (hubRunning()) return toast('A switch is already running.', 'info');
+  const guild = ((HUB.data && HUB.data.guilds) || []).find((g) => g.guild_id === guildId);
+  const data = await api('/api/hub', { guild_id: guildId });
+  if (!data || data.status !== 'success') {
+    return toast((data && data.message) || 'Could not switch the member page to that server.', 'error');
+  }
+  if (data.guilds) { HUB.data = data; HUB.loaded = true; }
+  toast(`Rebuilding the member page roster for ${guild ? guild.guild_name : 'that server'}…`, 'info');
+  hubPaint();
+  hubPoll(true);
+}
+
+function hubWireBody() {
+  document.querySelectorAll('[data-hub-pick]').forEach((btn) => {
+    btn.onclick = () => hubSelect(btn.dataset.hubPick);
+  });
+}
+
+/* ============================================================
    MEMBER MANAGEMENT  (Owner Panel)
    Channel flags and the mass-action brake. One rail-driven modal
    that reuses the shared role/channel picker for every selection.
@@ -13896,6 +14027,7 @@ const MM = {
 };
 
 const MM_PAGES = [
+  { id: 'server', label: 'Member site server', icon: 'server' },
   { id: 'media', label: 'Media-only channels', icon: 'image' },
   { id: 'promo', label: 'Self-promo allowlist', icon: 'megaphone' },
   { id: 'cooldowns', label: 'Cooldowns', icon: 'timer' },
@@ -13977,12 +14109,15 @@ function mmRenderBody() {
       btn.classList.toggle('active', btn.dataset.mmPage === MM.page);
     });
   }
-  if (!MM.loaded) {
+  // The server page reads its own endpoint, so it has its own "ready" flag.
+  const ready = MM.page === 'server' ? HUB.loaded : MM.loaded;
+  if (!ready) {
     body.innerHTML = `<div class="mm-page">${Array.from({ length: 4 }, () => '<div class="am-skeleton row"></div>').join('')}</div>`;
     return;
   }
-  const inner = MM.page === 'promo' ? mmPromoHtml()
-    : MM.page === 'cooldowns' ? mmCooldownsHtml() : mmMediaHtml();
+  const inner = MM.page === 'server' ? mmServerHtml()
+    : MM.page === 'promo' ? mmPromoHtml()
+      : MM.page === 'cooldowns' ? mmCooldownsHtml() : mmMediaHtml();
   body.innerHTML = `<div class="mm-page">${inner}</div>`;
   body.classList.remove('am-enter');
   void body.offsetWidth;
@@ -14245,6 +14380,7 @@ async function mmClearCooldowns() {
 
 /* Every interactive element on the current page, bound after each repaint. */
 function mmWireBody() {
+  hubWireBody();
   if ($('mm-add-media')) $('mm-add-media').onclick = () => mmAddMediaChannels();
   if ($('mm-add-user')) $('mm-add-user').onclick = () => mmAddPromoUser();
   if ($('mm-pick-target')) $('mm-pick-target').onclick = () => mmPickPromoTarget();
@@ -14272,17 +14408,20 @@ function mmWireBody() {
   });
 }
 
-/* Open the panel: show the shell straight away, then fill it. */
-async function openMemberManagement() {
-  MM.page = MM.page || 'media';
+/* Open the panel: show the shell straight away, then fill it. `page` opens
+   straight onto one rail item, which is how the server button does it. */
+async function openMemberManagement(page) {
+  MM.page = page || MM.page || 'media';
   openModal('member-management-modal');
   mmRender();
-  await loadMemberManagement(true);
+  await Promise.all([loadMemberManagement(true), loadHub()]);
+  hubPoll(hubRunning());
   mmRender();
 }
 
 if ($('open-member-management')) $('open-member-management').onclick = () => openMemberManagement();
-if ($('mm-reload')) $('mm-reload').onclick = () => loadMemberManagement(true);
+if ($('open-hub-server')) $('open-hub-server').onclick = () => openMemberManagement('server');
+if ($('mm-reload')) $('mm-reload').onclick = async () => { await Promise.all([loadMemberManagement(true), loadHub()]); mmRender(); };
 
 /* Escape closes the panel. A picker above it swallows the press first (see the
    handler that closes the pickers), so this only ever sees the topmost surface. */
@@ -14298,6 +14437,9 @@ document.addEventListener('keydown', (e) => {
 /* Keep the owner panel's summary line current on load, without opening the
    modal — the card is the only thing visible until someone clicks. */
 function mmRefreshCardSummary() {
+  // The member page's server is site-wide, so it is painted even when this
+  // panel has no server selected yet.
+  loadHub().then(() => { hubPaint(); hubPoll(hubRunning()); });
   const gid = state.guild && state.guild.guild_id;
   if (!gid) return;
   const el = $('mm-summary');
