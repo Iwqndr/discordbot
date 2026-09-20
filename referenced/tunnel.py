@@ -43,15 +43,18 @@ Everything here is best-effort: if neither client is available the panel stays
 local and the bot is unaffected.
 """
 
+import json
 import os
 import re
 import signal
 import socket
+import ssl
 import subprocess
 import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
 
 from console import debug, error, info, warn
 
@@ -102,6 +105,10 @@ _provider = None
 # there instead of re-discovering the same dead UDP path (and rotating through
 # yet another address).
 _prefer_protocol = ""
+# Public-DNS verdicts, so the watchdog does not ask on every tick.
+_doh_cache: dict = {}
+# Address already reported as unresolvable-by-this-machine, so that is said once.
+_dns_warned_for = ""
 _lock = threading.Lock()
 _early_output: list = []
 _restarts = 0
@@ -449,7 +456,11 @@ def _try_cloudflared(port: int, named: bool = False, protocol: str = "") -> str:
         return "failed"
 
     url = public_url()
-    if url and _wait_healthy(url):
+    # A quick tunnel prints its address before the edge starts routing through
+    # it, and this wait is what decides whether that address gets swapped for a
+    # new one. Patience here is what keeps the link already handed out alive;
+    # the address is published either way, so waiting costs nothing.
+    if url and _wait_healthy(url, attempts=5 if named else 8):
         return "live"
 
     if named:
@@ -486,9 +497,16 @@ def _try_quick_tunnel(port: int) -> str:
              f"tunnel has nothing to forward. Fix the Flask error above, not the tunnel.")
         return status
 
-    if not public_url() or not _resolves(public_url()):
-        warn(f"Panel tunnel: {public_url() or 'the address'} does not even resolve from "
-             f"this machine, which can be its DNS caching the miss rather than the tunnel.")
+    url = public_url()
+    if _local_dns_is_the_problem(url):
+        # The tunnel is registered and public DNS either knows the address or
+        # cannot be asked, but this machine cannot look it up. Swapping to a new
+        # address would break a link that works for everyone else.
+        warn(f"Panel tunnel: {url} could not be looked up from this machine, but public DNS "
+             f"does not say it is gone — so it is being kept, because replacing it would "
+             f"break a link that works for everyone else. That points at this machine's "
+             f"resolver, not the tunnel: point it at 1.1.1.1/8.8.8.8 and flush its cache.")
+        return status
 
     _prefer_protocol = "http2"
     warn("Panel tunnel: the quick tunnel is up but carrying no traffic, while the panel "
@@ -653,10 +671,77 @@ def start(port: int) -> bool:
 
 def _watch(process: subprocess.Popen) -> None:
     process.wait()
+    # `stop()` is how a restart or a protocol swap ends a client, and by then the
+    # replacement already owns the published address. A deliberate stop is not a
+    # failure, and reporting one would read as the panel going down — which is
+    # exactly how a healthy http2 swap looked in the log.
+    if _process is not process:
+        debug(f"Panel tunnel: client (pid {process.pid}) exited after being stopped.")
+        return
     _unpublish()
     code = process.returncode
     if code not in (0, None):
         error(f"Panel tunnel stopped (exit {code}). The panel is local only until it restarts.")
+
+
+_HEALTH_HEADERS = {
+    "User-Agent": "wispcord-tunnel-health",
+    # loca.lt serves browsers a "Tunnel website ahead" page; this header is how a
+    # non-browser caller goes straight through, so the check measures the tunnel
+    # rather than that page.
+    "Bypass-Tunnel-Reminder": "true",
+}
+
+
+def _http_ok(url: str, timeout: float) -> bool:
+    """One GET at `url`, letting this machine's resolver find it."""
+    request = urllib.request.Request(url + "/", headers=_HEALTH_HEADERS)
+    with urllib.request.urlopen(request, timeout=timeout) as res:
+        return res.status < 500
+
+
+def _http_ok_via_ip(url: str, ip: str, timeout: float) -> bool:
+    """GET `url` by dialing `ip` directly, keeping the right SNI and Host header.
+
+    A brand-new quick-tunnel hostname can be missing from — or cached as missing
+    by — this machine's resolver while Cloudflare's edge is already carrying the
+    tunnel perfectly. Dialing an address that public DNS just handed over asks
+    the question the health check means to ask: is the tunnel carrying traffic?
+    """
+    import http.client
+
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname or ""
+    secure = parts.scheme != "http"
+    port = parts.port or (443 if secure else 80)
+
+    connection = (
+        http.client.HTTPSConnection(host, port, timeout=timeout)
+        if secure
+        else http.client.HTTPConnection(host, port, timeout=timeout)
+    )
+    raw = socket.create_connection((ip, port), timeout=timeout)
+    adopted = False
+    try:
+        if secure:
+            # server_hostname keeps SNI — and certificate checking — on the real
+            # hostname, so the edge routes to the tunnel being measured.
+            connection.sock = ssl.create_default_context().wrap_socket(
+                raw, server_hostname=host
+            )
+        else:
+            connection.sock = raw
+        adopted = True
+        connection.request("GET", "/", headers=_HEALTH_HEADERS)
+        response = connection.getresponse()
+        status = response.status
+        response.read()
+    finally:
+        if adopted:
+            connection.close()
+        else:
+            raw.close()
+    return status < 500
 
 
 def _healthy(url: str, timeout: int = 15) -> bool:
@@ -666,18 +751,27 @@ def _healthy(url: str, timeout: int = 15) -> bool:
     client stays up, and the provider starts answering "Unavailable" while
     `start()` still believes everything is fine. The only reliable check is to
     ask the public address.
+
+    When this machine cannot resolve the address, public DNS is asked and what it
+    returns is dialed directly. Without that, a resolver that has not caught up
+    with a fresh quick tunnel looks exactly like a dead tunnel — and treating it
+    as dead is what rotated a working link out from under the panel on startup.
     """
-    import urllib.request
+    if not url:
+        return False
 
     try:
-        req = urllib.request.Request(
-            url + "/",
-            headers={"User-Agent": "wispcord-tunnel-health", "Bypass-Tunnel-Reminder": "true"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as res:
-            return res.status < 500
+        return _http_ok(url, timeout)
     except Exception:
-        return False
+        pass
+
+    for ip in _doh_answers(url) or []:
+        try:
+            if _http_ok_via_ip(url, ip, timeout):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _resolves(url: str) -> bool:
@@ -697,6 +791,70 @@ def _resolves(url: str) -> bool:
         return False
 
 
+def _doh_answers(url: str, ttl: float = 30.0):
+    """A records for this address, straight from Cloudflare's DNS over HTTPS.
+
+    Returns the addresses, `[]` when public DNS says the name is not there, or
+    None when the question could not be asked at all (no route, no TLS). The
+    distinction is the whole point: only an empty answer means a dead tunnel,
+    while an unanswerable question must never be read as one — doing that is what
+    turned a flaky link into a rotating address. Asking over HTTPS means this
+    needs no resolver on this machine and no extra dependency.
+    """
+    host = urllib.parse.urlsplit(url or "").hostname or ""
+    if not host:
+        return []
+
+    now = time.time()
+    cached = _doh_cache.get(host)
+    if cached and now - cached[1] < ttl:
+        return cached[0]
+
+    try:
+        request = urllib.request.Request(
+            f"https://cloudflare-dns.com/dns-query?name={urllib.parse.quote(host)}&type=A",
+            headers={"accept": "application/dns-json", "User-Agent": "wispcord-tunnel-health"},
+        )
+        with urllib.request.urlopen(request, timeout=8) as res:
+            payload = json.loads(res.read().decode("utf-8", "replace"))
+    except Exception:
+        return None
+
+    if payload.get("Status") != 0:
+        answers: list = []
+    else:
+        answers = [
+            record.get("data", "")
+            for record in payload.get("Answer") or []
+            if record.get("type") == 1 and record.get("data")
+        ]
+
+    # Only a *positive* answer is cached. Measured live: a quick tunnel that is
+    # already carrying traffic still answers NXDOMAIN for a second or two while
+    # its record propagates, and caching that for the cache's full lifetime keeps
+    # saying "this name is gone" about a tunnel that is perfectly alive.
+    if answers:
+        _doh_cache[host] = (answers, now)
+    return answers
+
+
+def _resolves_globally(url: str) -> bool:
+    """Does *public* DNS know this name?"""
+    return bool(_doh_answers(url))
+
+
+def _local_dns_is_the_problem(url: str) -> bool:
+    """Is this machine's resolver the reason `url` does not answer?
+
+    True when the address cannot be looked up here, while public DNS either knows
+    it or cannot be asked. Only public DNS saying "this name is not there"
+    justifies calling the tunnel dead and rotating the address.
+    """
+    if not url or _resolves(url):
+        return False
+    return _doh_answers(url) != []
+
+
 def _wait_healthy(url: str, attempts: int = 5, gap: float = 4.0) -> bool:
     """Give a freshly started tunnel a few moments to become reachable.
 
@@ -714,7 +872,7 @@ def _wait_healthy(url: str, attempts: int = 5, gap: float = 4.0) -> bool:
 
 def _health_loop(port: int) -> None:
     """Restart the tunnel when it stops carrying traffic."""
-    global _restarts
+    global _restarts, _dns_warned_for
     misses = 0
     restarts = 0
     healthy_runs = 0
@@ -726,10 +884,22 @@ def _health_loop(port: int) -> None:
         if url and _healthy(url):
             healthy_runs += 1
             misses = 0
+            _dns_warned_for = ""
             # Only a genuinely stable spell clears the restart history, so a
             # tunnel that flaps forever cannot reset its own counter and loop.
             if healthy_runs >= 15:
                 restarts = 0
+            continue
+
+        if url and _local_dns_is_the_problem(url):
+            # Not a tunnel failure: this machine just cannot look the address up,
+            # and restarting here would rotate the address every minute.
+            if url != _dns_warned_for:
+                _dns_warned_for = url
+                warn(f"Panel tunnel: {url} cannot be looked up by this machine's resolver, "
+                     f"and public DNS does not say it is gone — so it is being left alone "
+                     f"rather than replaced. Point this machine at 1.1.1.1/8.8.8.8 and flush "
+                     f"its DNS cache.")
             continue
 
         healthy_runs = 0

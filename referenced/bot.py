@@ -1,8 +1,11 @@
 import math
 import asyncio
 import datetime
+import os
 import re
 import random
+import socket
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -71,7 +74,45 @@ intents.presences = True
 intents.guilds = True
 intents.moderation = True
 
-bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=intents, help_command=None)
+
+class IPv4Bot(commands.Bot):
+    """A bot that reaches Discord over IPv4 only.
+
+    Left to itself, aiohttp dials every address a name resolves to, in parallel.
+    On this network that fails the TLS handshake to discord.com several times in
+    six with "SSLV3_ALERT_HANDSHAKE_FAILURE", while dialing IPv4 alone succeeds
+    every time. Each failure costs a retry, so it shows up twice: as a stalled
+    startup and as the gateway reconnecting in a loop.
+
+    The connector cannot be built in `__init__`. aiohttp 3.13 resolves its event
+    loop when the connector is constructed and raises "no running event loop"
+    from module scope — and this bot is created at module scope. So it is
+    installed on the first call made from inside the loop instead, before
+    login() builds the session that uses it.
+
+    Set DISCORD_IPV4_ONLY=0 to dial both families again.
+    """
+
+    async def login(self, token: str) -> None:
+        self._install_ipv4_connector()
+        return await super().login(token)
+
+    def _install_ipv4_connector(self) -> None:
+        if (os.getenv("DISCORD_IPV4_ONLY") or "1").strip().lower() in ("0", "false", "off", "no"):
+            return
+        existing = getattr(self.http, "connector", None)
+        if isinstance(existing, aiohttp.BaseConnector):
+            # Whoever built this client already chose a connector; that wins.
+            return
+        try:
+            # limit=0 is what discord.py's own default connector uses.
+            self.http.connector = aiohttp.TCPConnector(limit=0, family=socket.AF_INET)
+        except Exception as exc:
+            warn(f"Discord could not be pinned to IPv4 ({type(exc).__name__}: {exc}); "
+                 f"using the default connector.")
+
+
+bot = IPv4Bot(command_prefix=COMMAND_PREFIX, intents=intents, help_command=None)
 
 
 @bot.before_invoke
