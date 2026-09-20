@@ -8903,7 +8903,7 @@ function renderAmStats() {
   if (pill) {
     const cls = !cfg.enabled ? 'off' : (cfg.dry_run ? 'dry' : 'on');
     pill.className = 'am-state ' + cls;
-    pill.innerHTML = `<span class="am-state-dot"></span>${!cfg.enabled ? 'suite off' : (cfg.dry_run ? 'dry run' : 'suite armed')}`;
+    pill.innerHTML = `<span class="am-state-dot"></span>${!cfg.enabled ? 'suite off' : (cfg.dry_run ? 'dry run' : 'connected')}`;
   }
   icons();
 }
