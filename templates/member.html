@@ -1609,9 +1609,9 @@
   html.reduce-motion .modal-backdrop,
   html.reduce-motion .toast { transition-duration: 0.2s !important; }
   html.reduce-motion .modal-card { transition-duration: 0.2s !important; }
-  @media (prefers-reduced-motion: reduce) {
-    .name-rainbow { animation: none !important; }
-  }
+  /* The rainbow name is on the same switch as the badges, and for the same
+     reason: an OS-level media query here would fight it. */
+  html.reduce-motion .name-rainbow { animation: none !important; }
 
   /* ============================================================
      CUSTOM NAME STYLES
@@ -1824,17 +1824,18 @@
     text-underline-offset: 2px;
   }
   /* Motion off must leave the style readable, never blank it: every animated
-     effect above carries a rest state it falls back to. */
+     effect above carries a rest state it falls back to.
+
+     This is driven by the page's own Reduced motion switch and nothing else.
+     A `@media (prefers-reduced-motion: reduce)` rule used to sit here as well,
+     which quietly ran the animations off for anyone whose OS asks for less
+     motion — including this machine — while the admin panel, which never
+     asked, kept animating, and the switch could not turn them back on. The
+     switch is the control, exactly as `reducedMotionOn()` documents. */
   html.reduce-motion .staff-tag-label.tg-rainbow,
   html.reduce-motion .staff-tag-label.tg-shimmer,
   html.reduce-motion .staff-tag-label.tg-glitch,
   html.reduce-motion .staff-tag-label.tg-holographic { animation: none !important; }
-  @media (prefers-reduced-motion: reduce) {
-    .staff-tag-label.tg-rainbow,
-    .staff-tag-label.tg-shimmer,
-    .staff-tag-label.tg-glitch,
-    .staff-tag-label.tg-holographic { animation: none !important; }
-  }
 
   /* ============================================================
      NAME CUSTOMIZER + FONT PICKER
@@ -7172,7 +7173,9 @@ function prefersReducedMotion() {
    The OS "reduce motion" setting used to be the first-visit default, which
    meant a machine with it switched on (as this desktop shell reports) got a
    completely static page with no indication why. The preference below is the
-   explicit switch, and that is now the only thing that turns motion off. */
+   explicit switch, and that is now the only thing that turns motion off —
+   including in the stylesheet, where `@media (prefers-reduced-motion: reduce)`
+   rules used to run the badge and name animations out from under it. */
 function reducedMotionOn() {
   let stored = null;
   try { stored = localStorage.getItem(PREF.motion); } catch (err) { stored = null; }
