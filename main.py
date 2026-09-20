@@ -18,7 +18,7 @@ import flask
 import github
 
 from bot import bot, TOKEN
-from dashboard import app, set_bot
+from dashboard import app, set_bot, start_queue_worker
 from console import debug, error, info, warn
 
 github.register(app)
@@ -270,6 +270,12 @@ if __name__ == "__main__":
     # redirect to it. On its own thread, so the bot logs in immediately instead
     # of waiting on the tunnel's health check.
     threading.Thread(target=start_tunnel, daemon=True).start()
+
+    # Tickets opened on the member page are filed in Supabase, not here, so
+    # something has to collect them: this worker drains that queue and posts each
+    # one to the staff channel. It also keeps the heartbeat the member page reads
+    # to decide whether a new ticket is "open" or still "processing".
+    start_queue_worker()
 
     # _start_bot() blocks on Discord's event loop and is what keeps this process
     # alive. Without it __main__ returns immediately, Python exits, and the

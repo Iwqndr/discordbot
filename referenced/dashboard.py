@@ -5598,14 +5598,20 @@ def _ticket_public(ticket):
 
 
 def _notify_staff(ticket):
-    """Post the new ticket in the staff channel. Never breaks the request."""
+    """Post the new ticket in the staff channel. Never breaks the request.
+
+    Returns True when the embed is actually in the channel. The panel ignores
+    that (a ticket is saved either way), but the queue worker needs it: a ticket
+    filed from the member page while the bot was away has to be posted later,
+    and "later" is decided by this answer.
+    """
     if not TICKET_CHANNEL_ID or bot is None or bot.loop is None:
-        return
+        return False
 
     async def send():
         channel = bot.get_channel(int(TICKET_CHANNEL_ID))
         if channel is None:
-            return
+            return False
         color = {"high": 0xC98A6E, "low": 0x8FA88B}.get(ticket.get("priority"), 0x6EA8C9)
         embed = discord.Embed(
             title=f"Ticket {ticket['id']} - {ticket['category_label']}",
@@ -5635,11 +5641,13 @@ def _notify_staff(ticket):
         embed.timestamp = discord.utils.utcnow()
         ping = f"<@&{TICKET_PING_ROLE_ID}>" if TICKET_PING_ROLE_ID else None
         await channel.send(content=ping, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+        return True
 
     try:
-        _run(send(), timeout=15)
+        return bool(_run(send(), timeout=15))
     except Exception as exc:
         print(f"[tickets] staff notify failed: {exc}")
+        return False
 
 
 @app.route("/api/tickets", methods=["GET"])
@@ -6262,5 +6270,399 @@ def api_me_history():
             if member_obj and member_obj.timed_out_until else None
         ),
     })
+
+
+# ==========================================================
+# THE MEMBER PAGE'S TICKET QUEUE
+# ==========================================================
+# The member page cannot create a ticket itself: it runs on Cloudflare, while the
+# bot token and `tickets.json` live on this machine. So the page files the ticket
+# in Supabase's `ticket_queue` and this worker drains that queue here — the only
+# process that can actually put a ticket in the staff channel.
+#
+# It also posts a heartbeat into `bot_status` (id 'admin'), which is how the page
+# knows whether anyone is listening. With the heartbeat fresh the page files a new
+# ticket as "open", because it lands in the staff channel within seconds; with it
+# stale the page files it as "processing" and tags it in "My tickets", so the
+# member sees something greyed and honest instead of a ticket that quietly goes
+# nowhere. Either way the ticket is in the queue, so nothing is lost while this
+# process is down — it is created the moment the bot comes back.
+
+QUEUE_TABLE = "ticket_queue"
+INDEX_TABLE = "member_tickets"
+ADMIN_STATUS_ID = "admin"
+
+QUEUE_BATCH = 10
+QUEUE_IDLE_SECONDS = 5.0        # between polls that found nothing
+QUEUE_BURST_SECONDS = 1.0       # after a poll that did find something
+ADMIN_HEARTBEAT_SECONDS = 45.0  # the page treats three minutes of silence as offline
+
+_queue_thread = None
+_queue_thread_lock = threading.Lock()
+_queue_heartbeat_at = 0.0
+
+
+def _queue_request(method, path, data=None, extra_headers=None, timeout=15):
+    """One Supabase call using the service key, or (0, reason)."""
+    try:
+        from supabase_helper import _request
+
+        return _request(method, path, data=data, extra_headers=extra_headers, timeout=timeout)
+    except Exception as exc:  # not configured, DNS, TLS — all the same here
+        return 0, f"{type(exc).__name__}: {exc}"
+
+
+def _queue_quote(value):
+    return urllib.parse.quote(str(value or ""), safe="")
+
+
+def _queue_text(value, limit):
+    return str(value or "").strip()[:limit]
+
+
+def _queue_rows(limit=QUEUE_BATCH):
+    """Tickets the member page filed that have not been created yet, oldest first."""
+    status, raw = _queue_request(
+        "GET", f"{QUEUE_TABLE}?processed_at=is.null&select=*&order=created_at.asc&limit={int(limit)}"
+    )
+    if status != 200:
+        return []
+    try:
+        rows = json.loads(raw)
+    except Exception:
+        return []
+    return rows if isinstance(rows, list) else []
+
+
+def _queue_mark(row, patch=None):
+    """Flag one queue row as dealt with."""
+    ticket_id = _queue_text(row.get("ticket_id"), 40)
+    if ticket_id:
+        where = f"ticket_id=eq.{_queue_quote(ticket_id)}"
+    elif row.get("id") is not None:
+        where = f"id=eq.{int(row['id'])}"
+    else:
+        return False
+    data = dict(patch) if patch else {"processed_at": _utc_now()}
+    data.setdefault("processed_at", _utc_now())
+    status, _ = _queue_request(
+        "PATCH", f"{QUEUE_TABLE}?{where}", data=data, extra_headers={"Prefer": "return=minimal"}
+    )
+    return 200 <= status < 300
+
+
+def _guild_member(user_id):
+    """The ticket's author as the bot knows them, when the cache has them."""
+    if bot is None or not str(user_id or "").isdigit():
+        return None
+    try:
+        guild = bot.get_guild(int(GUILD_ID)) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+        return guild.get_member(int(user_id)) if guild is not None else None
+    except Exception:
+        return None
+
+
+def _ticket_from_queue_row(row, number, member=None):
+    """Turn one `ticket_queue` row into a ticket the panel understands.
+
+    The two shapes are close but not identical. The page keys a ticket by
+    `ticket_id` (W-XXXXXX) and the panel numbers its own (T0001), so the web id
+    rides along as `web_id` — that is what lets the member's view be kept in step
+    with this one, and what makes a second pass over the same row a no-op.
+    """
+    raw_user = _queue_text(row.get("discord_user_id"), 32)
+    anonymous = bool(row.get("anonymous")) or not raw_user.isdigit()
+    user_id = "" if anonymous else raw_user
+
+    category = _queue_text(row.get("category"), 40).lower()
+    if category not in TICKET_CATEGORIES:
+        category = "other"
+    category_label = _queue_text(row.get("category_label"), 120) or TICKET_CATEGORIES[category]
+
+    answers = row.get("answers") if isinstance(row.get("answers"), dict) else {}
+    answers = {
+        str(key)[:80]: str(value)[:2000]
+        for key, value in list(answers.items())[:40]
+        if str(value or "").strip()
+    }
+    # The page's form answers are what the panel normally shows; `body` is the
+    # older single-text column, kept as a fallback so nothing is dropped.
+    if not answers:
+        body = _queue_text(row.get("body"), 2000)
+        if body:
+            answers = {"Message": body}
+
+    shots = row.get("attachments") if isinstance(row.get("attachments"), list) else []
+    attachments = [str(url) for url in shots if isinstance(url, str) and url][:TICKET_ATTACH_MAX_FILES]
+
+    priority = _queue_text(row.get("priority"), 12).lower()
+    if priority not in ("low", "normal", "high"):
+        priority = "normal"
+
+    created_at = _queue_text(row.get("created_at"), 40) or _utc_now()
+    username = _queue_text(row.get("discord_tag"), 80)
+    display_name = username
+    avatar_url = ""
+    if member is not None:
+        username = _queue_text(getattr(member, "name", ""), 80) or username
+        display_name = _queue_text(
+            getattr(member, "display_name", "") or getattr(member, "name", ""), 80
+        ) or display_name
+        avatar_url = str(getattr(member, "display_avatar", "") or "")
+
+    return {
+        "id": f"T{number:04d}",
+        "number": number,
+        "user_id": user_id,
+        "anonymous": anonymous,
+        "anon_label": f"Anonymous-{random.randint(100, 9999)}" if anonymous else "",
+        "assigned_to": None,
+        "participants": {"users": [], "roles": []},
+        "contact": _queue_text(row.get("contact"), 200),
+        "username": username,
+        "display_name": display_name or username,
+        "avatar_url": avatar_url,
+        "category": category,
+        "category_label": category_label,
+        "subject": _queue_text(row.get("subject"), 120) or category_label,
+        "priority": priority,
+        "answers": answers,
+        "attachments": attachments,
+        "status": "open",
+        "created_at": created_at,
+        "updated_at": created_at,
+        "replies": [],
+        # --- what makes a member-page ticket different from a panel one ---
+        "web_id": _queue_text(row.get("ticket_id"), 40),
+        "web_notified": False,
+    }
+
+
+def _sync_member_ticket(ticket, status=None):
+    """Keep the member's own view of this ticket in step with the panel's copy.
+
+    The page's index row is written twice on purpose: by the site when the ticket
+    is filed, and again here when it is actually created. If the site's insert
+    failed (a schema mismatch used to make every one of them fail), the ticket
+    still turns up under "My tickets" the moment this runs.
+    """
+    web_id = _queue_text(ticket.get("web_id"), 40)
+    if not web_id:
+        return False
+    now = _utc_now()
+    wanted = status or ticket.get("status") or "open"
+
+    found, raw = _queue_request(
+        "GET", f"{INDEX_TABLE}?ticket_id=eq.{_queue_quote(web_id)}&select=ticket_id&limit=1"
+    )
+    if found == 200:
+        try:
+            if json.loads(raw):
+                status_code, _ = _queue_request(
+                    "PATCH",
+                    f"{INDEX_TABLE}?ticket_id=eq.{_queue_quote(web_id)}",
+                    data={"status": wanted, "updated_at": now},
+                    extra_headers={"Prefer": "return=minimal"},
+                )
+                return 200 <= status_code < 300
+        except Exception:
+            pass
+
+    row = {
+        "ticket_id": web_id,
+        "category": ticket.get("category"),
+        "category_label": ticket.get("category_label"),
+        "subject": ticket.get("subject"),
+        "contact": ticket.get("contact") or None,
+        "priority": ticket.get("priority") or "normal",
+        "answers": ticket.get("answers") or {},
+        "attachments": ticket.get("attachments") or [],
+        "discord_user_id": str(ticket.get("user_id") or ""),
+        "discord_tag": ticket.get("username") or None,
+        "status": wanted,
+        "created_at": ticket.get("created_at") or now,
+        "updated_at": now,
+    }
+    # Deliberately no `anonymous` key: `member_tickets` has no such column, and
+    # PostgREST rejects a whole insert over one unknown field.
+    status_code, _ = _queue_request(
+        "POST", INDEX_TABLE, data=row, extra_headers={"Prefer": "return=minimal"}
+    )
+    return 200 <= status_code < 300
+
+
+def _post_to_staff(ticket):
+    """Post one ticket's embed, recording that it is done. True when it landed."""
+    if not _notify_staff(ticket):
+        return False
+    with TICKET_LOCK:
+        rows = _load_tickets()
+        for item in rows:
+            if item.get("web_id") and item.get("web_id") == ticket.get("web_id"):
+                item["web_notified"] = True
+                item["updated_at"] = item.get("updated_at") or _utc_now()
+                break
+        _save_tickets(rows)
+    return True
+
+
+def _create_queued_ticket(row, web_id):
+    """Create one queued ticket, exactly once. True when it is new.
+
+    Posting is deliberately not done here. A ticket that exists but has not
+    reached the staff channel is retried by the sweep in `flush_ticket_queue`,
+    which covers this one and anything left over from earlier passes — one place
+    decides when the channel is worth trying again, instead of two racing to.
+    """
+    with TICKET_LOCK:
+        rows = _load_tickets()
+        existing = next((t for t in rows if t.get("web_id") == web_id), None)
+        if existing is None:
+            number = max([int(t.get("number") or 0) for t in rows] or [0]) + 1
+            ticket = _ticket_from_queue_row(
+                row, number, _guild_member(_queue_text(row.get("discord_user_id"), 32))
+            )
+            rows.append(ticket)
+            _save_tickets(rows)
+            fresh = True
+        else:
+            ticket = existing
+            fresh = False
+
+    _sync_member_ticket(ticket)
+    # The row is done either way: the ticket now exists, and an unsent post is
+    # the sweep's business — retrying it here is what would create duplicates.
+    _queue_mark(row, {"status": ticket.get("status") or "open", "processed_at": _utc_now()})
+    if fresh:
+        print(f"[tickets] {ticket['id']} created from the member page ({web_id}).")
+    return fresh
+
+
+def _post_waiting_tickets():
+    """Post every ticket that is not in the staff channel yet.
+
+    That is a brand-new one in this same pass, plus anything left over from a
+    time when the bot was down: the ticket is saved first and posted second, so a
+    crash between the two costs a retry rather than the ticket.
+    """
+    with TICKET_LOCK:
+        waiting = [t for t in _load_tickets() if t.get("web_id") and not t.get("web_notified")]
+    posted = 0
+    for ticket in waiting:
+        if bot is None or not bot.is_ready():
+            break
+        if not _post_to_staff(ticket):
+            break  # still unreachable: one attempt per pass is enough
+        print(f"[tickets] {ticket.get('id')} posted to the staff channel.")
+        posted += 1
+    return posted
+
+
+def flush_ticket_queue(limit=QUEUE_BATCH):
+    """Create every ticket waiting in the member page's queue.
+
+    Returns how many queue rows were dealt with, which is all the caller needs to
+    decide between the idle and burst poll intervals.
+    """
+    if bot is None or not bot.is_ready():
+        # Nothing can be created without a connection, so leave the rows alone:
+        # they are safe in the queue and will be picked up on a later pass.
+        return 0
+
+    handled = 0
+    for row in _queue_rows(limit):
+        web_id = _queue_text(row.get("ticket_id"), 40)
+        if not web_id:
+            _queue_mark(row)  # nothing to key it by: take it out of the queue
+            continue
+        try:
+            if _create_queued_ticket(row, web_id):
+                handled += 1
+        except Exception as exc:
+            print(f"[tickets] queued ticket {web_id} could not be created: "
+                  f"{type(exc).__name__}: {exc}")
+    handled += _post_waiting_tickets()
+    return handled
+
+
+def admin_heartbeat(force=False):
+    """Tell the member page this process is alive and draining the queue.
+
+    Silence is the signal the page acts on: with no fresh row it files new
+    tickets as "processing" instead of "open". So the only honest thing to do
+    when the bot is not connected is to write nothing.
+    """
+    global _queue_heartbeat_at
+    now = time.time()
+    if not force and now - _queue_heartbeat_at < ADMIN_HEARTBEAT_SECONDS:
+        return False
+    if bot is None or not bot.is_ready():
+        return False
+
+    latency_ms = 0
+    try:
+        latency = float(getattr(bot, "latency", 0.0))
+        # NaN before the first heartbeat, inf while one is in flight.
+        if latency == latency and latency < 600:
+            latency_ms = int(latency * 1000)
+    except Exception:
+        latency_ms = 0
+
+    row = {
+        "id": ADMIN_STATUS_ID,
+        "updated_at": _utc_now(),
+        "guild_count": len(bot.guilds),
+        "member_count": sum(g.member_count or 0 for g in bot.guilds),
+        "latency_ms": latency_ms,
+        "uptime_seconds": int(time.time() - BOT_START),
+    }
+    upsert = {"Prefer": "resolution=merge-duplicates,return=minimal"}
+    status, raw = _queue_request(
+        "POST", "bot_status?on_conflict=id", data=row, extra_headers=upsert
+    )
+    if not (200 <= status < 300):
+        # `uptime_seconds` was added after the first release, so a project that
+        # never ran that ALTER would reject the whole row. Losing the heartbeat
+        # would make the member page call every new ticket "processing", so drop
+        # the optional field and write the row that has always worked.
+        row.pop("uptime_seconds", None)
+        status, raw = _queue_request(
+            "POST", "bot_status?on_conflict=id", data=row, extra_headers=upsert
+        )
+    if 200 <= status < 300:
+        _queue_heartbeat_at = now
+        return True
+    # Never fatal: a heartbeat is a convenience, not the queue itself.
+    print(f"[tickets] heartbeat failed ({status}) {str(raw)[:200]}")
+    return False
+
+
+def _queue_loop():
+    """Poll the queue forever. Runs on its own thread: every step is a blocking
+    HTTP call, and the bot's event loop must stay free for Discord."""
+    print("[tickets] watching the member page's queue.")
+    admin_heartbeat(force=True)
+    while True:
+        handled = 0
+        try:
+            handled = flush_ticket_queue()
+        except Exception as exc:
+            print(f"[tickets] queue check failed: {type(exc).__name__}: {exc}")
+        try:
+            admin_heartbeat()
+        except Exception as exc:
+            print(f"[tickets] heartbeat failed: {type(exc).__name__}: {exc}")
+        time.sleep(QUEUE_BURST_SECONDS if handled else QUEUE_IDLE_SECONDS)
+
+
+def start_queue_worker():
+    """Start the queue worker. True when this call is the one that started it."""
+    global _queue_thread
+    with _queue_thread_lock:
+        if _queue_thread is not None and _queue_thread.is_alive():
+            return False
+        _queue_thread = threading.Thread(target=_queue_loop, name="ticket-queue", daemon=True)
+        _queue_thread.start()
+        return True
 
 

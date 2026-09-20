@@ -19,6 +19,30 @@ import {
   supa,
 } from "../_lib/core.js";
 
+/** How long a bot heartbeat stays "fresh". The worker writes one every 45s. */
+const ADMIN_ONLINE_WINDOW_SECONDS = 180;
+
+/**
+ * Is the bot that drains `ticket_queue` running?
+ *
+ * That heartbeat is the *admin* bot's: it is the admin bot that owns the staff
+ * channel and the ticket store, so it is the one whose being up or down decides
+ * whether a new ticket is created now or queued for later. Silence means down —
+ * the newest row is missing, stale, or unreadable.
+ */
+async function adminListening(env) {
+  try {
+    const res = await supa(env, "bot_status?id=eq.admin&select=updated_at&limit=1");
+    const row = res.ok && Array.isArray(res.rows) ? res.rows[0] : null;
+    const at = new Date(row?.updated_at || 0).getTime();
+    if (!Number.isFinite(at) || at <= 0) return false;
+    return (Date.now() - at) / 1000 < ADMIN_ONLINE_WINDOW_SECONDS;
+  } catch (err) {
+    console.warn(`ticket queue: could not read the admin heartbeat (${err})`);
+    return false;
+  }
+}
+
 function normaliseTier(value) {
   const text = String(value || "").trim().toLowerCase();
   return ["low", "normal", "high", "urgent"].includes(text) ? text : "normal";
@@ -107,27 +131,36 @@ async function handlePost({ request, env }) {
     discord_user_id: uid,
     discord_tag: String(body.discord_tag || "").slice(0, 100) || null,
     anonymous: false,
-    status: "open",
+    // With the bot listening this lands in the staff channel within seconds, so
+    // the member is told it is open. With it down the ticket waits in the queue,
+    // and "processing" is the honest thing to show: the row stays greyed and
+    // tagged until the bot comes back and creates it.
+    status: (await adminListening(env)) ? "open" : "processing",
   };
 
   // Two writes on purpose:
-  //   ticket_queue     — the admin bot's work queue (it holds the service key)
+  //   ticket_queue     — the bot's work queue, the only route into the staff
+  //                      channel, because nothing here can talk to Discord
   //   member_tickets   — the index the member page reads back through the Worker
-  // They are the same row, so the member can follow a ticket from the moment
-  // they send it rather than only after staff pick it up.
+  // Nearly the same row, but not the same table: `member_tickets` has no
+  // `anonymous` column, and PostgREST rejects an insert over one unknown field,
+  // so sending the queue row to both used to file every ticket in the queue and
+  // show nothing under "My tickets".
   const queued = await supa(env, "ticket_queue", { method: "POST", body: row });
   if (!queued.ok) {
     return fail(`We could not send your ticket (${queued.status}). Please try again.`, 502);
   }
 
-  const indexed = await supa(env, "member_tickets", { method: "POST", body: row });
+  const indexRow = { ...row };
+  delete indexRow.anonymous;
+  const indexed = await supa(env, "member_tickets", { method: "POST", body: indexRow });
   if (!indexed.ok) {
     // The ticket is safely queued, so this is not a user-facing failure — the
     // page just will not show it in "My tickets" until the bot syncs it back.
     console.warn(`member_tickets insert failed: ${indexed.status} ${indexed.text}`);
   }
 
-  const stored = Array.isArray(indexed.rows) ? indexed.rows[0] : row;
+  const stored = Array.isArray(indexed.rows) ? indexed.rows[0] : indexRow;
   return ok({ ticket: shapeTicket(stored) });
 }
 

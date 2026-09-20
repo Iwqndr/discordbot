@@ -102,3 +102,17 @@ PANEL_AUTHORIZE_URI = (
     os.getenv("PANEL_AUTHORIZE_URI")
     or (f"{MEMBER_SITE_URL}/authorize" if MEMBER_SITE_URL else DISCORD_REDIRECT_URI)
 ).strip()
+
+# A permanent address for the panel itself, if one is set up.
+#
+# The tunnel address changes on every restart, and because a hostname that is
+# seconds old is answered "does not exist" by a lot of resolvers (mobile carriers
+# and home routers especially), visitors on those networks get a blank page until
+# their resolver catches up — while the machine hosting the panel works fine. The
+# way out is to publish a fixed address that forwards to whatever tunnel is live,
+# which is what `workers/panel-proxy.js` is: deploy that Worker, then put its
+# address here. The panel then logs this address as the one to share, and the
+# member site's /dashboard uses it too.
+#
+# Leave it empty and nothing changes: the raw tunnel address is used as before.
+PANEL_PUBLIC_URL = (os.getenv("PANEL_PUBLIC_URL") or "").strip().rstrip("/")

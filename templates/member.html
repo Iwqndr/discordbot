@@ -904,6 +904,15 @@
   .status-pill.status-open { color: var(--accent-dark); border-color: var(--accent); background: var(--accent-soft); }
   .status-pill.status-answered { color: #6b7f4a; border-color: #a8bd8a; background: rgba(140, 170, 110, 0.16); }
   .status-pill.status-closed { color: var(--muted); border-color: var(--border); background: var(--bg); }
+  /* A ticket the member has sent that the bot has not picked up yet: greyed and
+     dashed, so it reads as "not live yet" rather than as a dead ticket. */
+  .status-pill.status-processing {
+    color: var(--muted); border-color: var(--border); background: transparent;
+    border-style: dashed;
+  }
+  .ticket-item.processing .ticket-id,
+  .ticket-item.processing .ticket-subject,
+  .ticket-item.processing .ticket-meta { opacity: 0.6; }
   .ticket-detail { margin-top: 14px; border-top: 2px dashed var(--border-soft); padding-top: 14px; }
 
   /* The conversation is one framed surface — header, scrolling messages and the
@@ -4250,6 +4259,9 @@ function formatDate(iso) {
 function statusLabel(status) {
   if (status === "answered") return "answered";
   if (status === "closed") return "closed";
+  // Queued because the bot was offline when it was sent: the ticket exists on
+  // the site, and turns into "open" by itself once the bot creates it.
+  if (status === "processing") return "processing";
   return "open";
 }
 
@@ -5504,9 +5516,14 @@ async function sendTicket() {
 function renderDonePage(sent) {
   hub.busy = false;
   setHead("Support", "Ticket sent", undefined);
-  const mineNote = hub.user
-    ? "You can follow this ticket from the My tickets button at the top right."
-    : "You are not logged in, so write the number down if you want to keep it.";
+  // A queued ticket is not in the staff channel yet, so saying "it is in the
+  // staff list" would be a lie the member can immediately check.
+  const queued = sent && sent.status === "processing";
+  const mineNote = queued
+    ? "The bot is offline right now, so this one is queued. It shows as Processing under My tickets and reaches the staff by itself."
+    : hub.user
+      ? "You can follow this ticket from the My tickets button at the top right."
+      : "You are not logged in, so write the number down if you want to keep it.";
   setPage(`
     <div class="sheet-note">${escapeHtml(mineNote)}</div>
     <div class="copy-strip">
@@ -5514,7 +5531,7 @@ function renderDonePage(sent) {
       <button class="btn small" id="copyId">${icon("copy")} Copy</button>
     </div>
     <div class="next-steps">
-      <div class="next-step"><span class="next-step-num">1</span><span class="next-step-text">Your ticket is in the staff list with the number ${escapeHtml(sent.id)}.</span></div>
+      <div class="next-step"><span class="next-step-num">1</span><span class="next-step-text">${queued ? `Your ticket is saved as ${escapeHtml(sent.id)} and is waiting for the bot to come back.` : `Your ticket is in the staff list with the number ${escapeHtml(sent.id)}.`}</span></div>
       <div class="next-step"><span class="next-step-num">2</span><span class="next-step-text">A reply usually comes within 24 hours.</span></div>
       <div class="next-step"><span class="next-step-num">3</span><span class="next-step-text">Urgent tickets are looked at first.</span></div>
     </div>
@@ -5853,7 +5870,7 @@ function ticketItemHtml(t) {
   const unread = (hub.unread && hub.unread[t.id]) || 0;
   const open = hub.openTicket === t.id;
   return `
-    <div class="ticket-item ${open ? "open" : ""}" data-ticket="${escapeHtml(t.id)}">
+    <div class="ticket-item ${open ? "open" : ""} ${t.status === "processing" ? "processing" : ""}" data-ticket="${escapeHtml(t.id)}">
       <div class="ticket-row">
         ${avatarHtml(t.title, t.avatar_url, `${t.id}:author`, "")}
         <div class="ticket-main">
@@ -5896,8 +5913,16 @@ function ticketDetailHtml(t) {
     || '<div class="empty-note">No replies yet.</div>';
 
   const open = t.status !== "closed";
+  // Queued because the bot was offline: nothing has reached the staff yet, so
+  // there is nothing to reply to yet either. The composer comes back with the
+  // ticket itself, once the bot creates it.
+  const processing = t.status === "processing";
   // Same chat surface as the staff console: header, messages, composer.
-  const tail = open ? `
+  const tail = processing ? `
+      <div class="chat-note">
+        <strong>Still on its way to the staff.</strong>
+        <span>The bot is offline right now, so this ticket is waiting in the queue. It reaches the staff by itself as soon as the bot is back, and this page will show it as open. No need to send it again.</span>
+      </div>` : open ? `
       <div class="reply-form">
         ${replyAttachHtml(t)}
         <textarea class="q-textarea" data-reply="${escapeHtml(t.id)}" maxlength="2000" placeholder="Write a reply to the team…"></textarea>
@@ -5912,6 +5937,10 @@ function ticketDetailHtml(t) {
       </div>`;
 
   return `
+    ${processing ? `<div class="chat-note" style="margin-bottom: 14px;">
+        <strong>Queued.</strong>
+        <span>This ticket has not reached the staff yet because the bot is offline. It is delivered automatically when the bot is back.</span>
+      </div>` : ""}
     <div class="review-key" style="margin-bottom: 8px;">What you told us</div>
     <div class="review-list">${answers}</div>
     ${openingShots ? `<div class="thread-block"><div class="review-key">Images you sent</div>${openingShots}</div>` : ""}
@@ -5923,7 +5952,7 @@ function ticketDetailHtml(t) {
       <div class="thread" data-thread="${escapeHtml(t.id)}">${replies}</div>
       ${tail}
     </div>
-    ${open ? `<div class="ticket-close-row">
+    ${open && !processing ? `<div class="ticket-close-row">
       <button class="btn danger" data-close="${escapeHtml(t.id)}">${icon("x")} Close ticket</button>
     </div>` : ""}`;
 }
@@ -7896,6 +7925,9 @@ function refreshTicketRows(list) {
       pill.className = `status-pill status-${statusLabel(t.status)}`;
       pill.textContent = statusLabel(t.status);
     }
+    // A queued ticket flips to "open" on its own once the bot picks it up, so
+    // the greying has to come off with the pill, not on the next full render.
+    item.classList.toggle("processing", t.status === "processing");
     const subject = item.querySelector(".ticket-subject");
     if (subject) subject.textContent = t.subject || t.category_label || "Ticket";
     const meta = item.querySelector(".ticket-meta");

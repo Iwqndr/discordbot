@@ -1,16 +1,17 @@
 // Panel link page for /dashboard.
 //
-// This deliberately does NOT proxy the admin panel. An earlier version did, and
-// it fought the panel the whole way: its session cookies landed on the wrong
-// domain, its redirects to `/admin` escaped the proxy, and its `/api/*` calls
-// needed their own passthrough. Opening the panel at its own address removes
-// every one of those problems, because the panel is then simply on the host it
-// thinks it is on.
+// This deliberately does NOT proxy the admin panel. An earlier version did on
+// this domain, and it fought the panel the whole way: its session cookies landed
+// on the wrong domain, its redirects to `/admin` escaped the proxy, and its
+// `/api/*` calls needed their own passthrough — and those paths belong to the
+// member site anyway. Proxying the panel is `workers/panel-proxy.js`'s job, on a
+// host of its own, where none of that collides.
 //
-// So this page does one job: it reads the tunnel address the host machine
-// published and offers it as a link.
+// So this page does one job: it reads the address the host machine published and
+// offers the best one it has — the permanent address when `PANEL_PUBLIC_URL` is
+// configured, otherwise the raw tunnel.
 
-import { currentUser, hmacHex, tunnelInfo } from "./_lib/core.js";
+import { currentUser, hmacHex, panelBase, tunnelInfo } from "./_lib/core.js";
 
 /**
  * The panel's signature over `uid.expires`, as hex HMAC-SHA256.
@@ -34,7 +35,7 @@ async function handoffSignature(env, uid, expires) {
  * Returns null when the handoff is not configured or the member is not signed
  * in, so the caller can fall back to the plain link page.
  */
-async function handoffUrl(request, env, tunnelUrl, next = "/admin") {
+async function handoffUrl(request, env, panelUrl, next = "/admin") {
   if (!env.PANEL_HANDOFF_SECRET) return null;
 
   const uid = await currentUser(request, env);
@@ -48,10 +49,10 @@ async function handoffUrl(request, env, tunnelUrl, next = "/admin") {
   if (!sig) return null;
 
   const params = new URLSearchParams({ uid: String(uid), expires, sig, next: target });
-  return `${tunnelUrl}/auth/handoff?${params.toString()}`;
+  return `${panelUrl}/auth/handoff?${params.toString()}`;
 }
 
-function page({ url, seenAt, stale }) {
+function page({ url, tunnel, seenAt, stale }) {
   const host = (() => {
     try {
       return new URL(url).host;
@@ -65,6 +66,14 @@ function page({ url, seenAt, stale }) {
   // 511 "Tunnel website ahead" page before it forwards anything, and that only
   // goes away per browser — so say so only when the address is a loca.lt one.
   const clickThrough = /\.loca\.lt$/i.test(host);
+  const permanent = Boolean(tunnel) && tunnel !== url;
+  const tunnelHost = (() => {
+    try {
+      return new URL(tunnel || url).host;
+    } catch {
+      return tunnel || url;
+    }
+  })();
 
   let lastSeen = "";
   if (seenAt) {
@@ -127,11 +136,18 @@ function page({ url, seenAt, stale }) {
   </a>
   <div class="muted">Opens in a new tab, at <code>jamesheston.pages.dev/dashboard</code></div>
 
-  ${stale ? `<div class="stale">This address was last seen ${lastSeen}, so the host machine may be
+  ${stale ? `<div class="stale">The host machine was last seen ${lastSeen}, so the panel may be
     offline. If the page does not load, start <code>main.py</code> and try again.</div>` : ""}
 
   <div class="note">
     <p>It runs on the host machine, so it only answers while that machine is on.</p>
+    ${permanent
+      ? `<p>This opens a permanent address that never changes, so it keeps working
+           when <code>main.py</code> restarts and the tunnel behind it gets a new name.
+           It currently forwards to <code>${tunnelHost}</code>.</p>`
+      : `<p>The address below is the tunnel itself, which is renamed every time
+           <code>main.py</code> restarts. Set <code>PANEL_PUBLIC_URL</code> to serve the
+           panel from a permanent address instead.</p>`}
     ${clickThrough
       ? `<p>loca.lt shows a "Tunnel website ahead" page before the panel loads. It is
            the tunnel service asking for a click, not a problem with your account.</p>`
@@ -173,6 +189,8 @@ export async function onRequestGet({ request, env }) {
   }
 
   const age = info.seenAt ? (Date.now() - new Date(info.seenAt).getTime()) / 1000 : Infinity;
+  // The permanent address when there is one, otherwise the tunnel as before.
+  const panel = panelBase(env, info.url);
 
   // Signed in on the member site already? Go straight in — this is what lets a
   // moderator reach the panel without ever authorising on it separately, and it
@@ -180,7 +198,7 @@ export async function onRequestGet({ request, env }) {
   // handoff reads whatever address is current instead of relying on a callback
   // registered with Discord.
   const requested = new URL(request.url).searchParams.get("next") || "/admin";
-  const direct = await handoffUrl(request, env, info.url, requested).catch(() => null);
+  const direct = await handoffUrl(request, env, panel, requested).catch(() => null);
   if (direct) {
     return new Response(null, {
       status: 302,
@@ -188,5 +206,5 @@ export async function onRequestGet({ request, env }) {
     });
   }
 
-  return page({ ...info, stale: age > 600 });
+  return page({ url: panel, tunnel: info.url, seenAt: info.seenAt, stale: age > 600 });
 }

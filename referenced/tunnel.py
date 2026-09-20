@@ -171,6 +171,12 @@ def _publish(url: str, kind: str) -> None:
             extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
         )
         info(f"Panel tunnel live ({kind}): {url}  (reached at /dashboard)")
+        permanent = share_url()
+        if permanent:
+            # Worth saying out loud once per publish: this is the address to hand
+            # to people, and the one above is only the address it is serving.
+            info(f"Panel tunnel: share {permanent} — it never changes "
+                 f"(the address above is what it currently forwards to).")
     except Exception as exc:
         warn(f"Could not publish the tunnel address: {type(exc).__name__}: {exc}")
 
@@ -310,6 +316,19 @@ def _dotenv_provider() -> str:
 
 def _localtunnel_subdomain() -> str:
     return (os.getenv("LOCALTUNNEL_SUBDOMAIN") or "").strip() or DEFAULT_SUBDOMAIN
+
+
+def share_url() -> str:
+    """The permanent panel address, when one is configured (`PANEL_PUBLIC_URL`).
+
+    The address this module produces is disposable: a quick tunnel gets a new
+    name on every restart, and a name that is seconds old is answered "does not
+    exist" by plenty of resolvers — mobile carriers and home routers especially —
+    so a visitor on that network gets a blank page even though the panel is fine.
+    A fixed address that forwards to whatever tunnel is live is the way out; see
+    `workers/panel-proxy.js`. Empty means "not set up", and nothing changes.
+    """
+    return (os.getenv("PANEL_PUBLIC_URL") or "").strip().rstrip("/")
 
 
 def _npx_command() -> list:

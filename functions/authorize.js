@@ -14,7 +14,7 @@
 // that check this would be a login gateway that anyone browsing the site could
 // use, which is exactly what it must not be.
 
-import { decodeB64urlJson, hmacHex, tunnelInfo } from "./_lib/core.js";
+import { decodeB64urlJson, hmacHex, panelBase, tunnelInfo } from "./_lib/core.js";
 
 /** How long a login may sit at Discord before its state is refused. */
 const MAX_STATE_AGE_SECONDS = 600;
@@ -143,18 +143,25 @@ export async function onRequestGet({ request, env }) {
       console.warn(`[authorize] refused a ${reason} login (${url.search || "no query"})`);
       return refusal(reason);
     }
-    console.log(`[authorize] forwarding a login for ${claims.next} to the live tunnel`);
 
     const info = await tunnelInfo(env).catch((err) => {
       console.error(`[authorize] tunnel lookup failed: ${err}`);
       return null;
     });
+    // The published address is what proves the host machine is actually up; the
+    // permanent address is where the visitor is sent.
     if (!info) return panelOffline();
+    console.log(`[authorize] forwarding a login for ${claims.next} to ${panelBase(env, info.url)}`);
 
     // Everything Discord sent rides along to the panel's callback, including a
     // refusal (`error=access_denied`), so its own page is what reports the
     // outcome — one login, one place that explains it.
-    const target = new URL(`${info.url}/auth/discord/callback`);
+    //
+    // `panelBase` prefers the panel's permanent address over the raw tunnel when
+    // one is configured, because the visitor's device is the thing that has to
+    // resolve it: a quick-tunnel hostname that is seconds old does not exist yet
+    // as far as many mobile and home resolvers are concerned.
+    const target = new URL(`${panelBase(env, info.url)}/auth/discord/callback`);
     if (code) target.searchParams.set("code", code);
     if (oauthError) target.searchParams.set("error", oauthError);
     target.searchParams.set("state", String(state || ""));

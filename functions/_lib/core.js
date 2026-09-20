@@ -102,6 +102,24 @@ export async function tunnelInfo(env) {
   return { url, seenAt: row?.updated_at || null };
 }
 
+/**
+ * Where to send someone to the panel: its permanent address, or the tunnel.
+ *
+ * A cloudflared quick tunnel is given a new random hostname on every restart, and
+ * a hostname that is seconds old is answered NXDOMAIN by a lot of resolvers —
+ * mobile carriers and home routers especially — so a visitor whose resolver has
+ * not caught up gets a blank page. `PANEL_PUBLIC_URL` is a fixed address (see
+ * `workers/panel-proxy.js`) that proxies to whatever tunnel is live, and it is
+ * preferred whenever it is configured. Without it, the raw tunnel address is used
+ * exactly as before.
+ */
+export function panelBase(env, tunnelUrl) {
+  const pinned = String(env?.PANEL_PUBLIC_URL ?? "").trim().replace(/\/+$/, "");
+  if (!pinned) return tunnelUrl;
+  if (!/^https?:\/\//i.test(pinned)) return `https://${pinned}`;
+  return pinned;
+}
+
 // ---------------------------------------------------------------------------
 // Session cookie — base64url payload plus an HMAC made with SESSION_SECRET
 // ---------------------------------------------------------------------------
