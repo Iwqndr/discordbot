@@ -388,10 +388,19 @@ export function prettyCategory(value) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** A short, human ticket number: W-XXXXXX. */
+/**
+ * A short, human ticket number: T-XXXXXX.
+ *
+ * One shape everywhere, on purpose. The bot adopts this id as the ticket's own
+ * instead of numbering tickets itself, so the number the member reads here, the
+ * number in the staff channel's embed and the number on the panel are the same
+ * string — a member can quote it and staff can find it. Random rather than a
+ * counter because the two sides mint ids independently: nothing has to agree on
+ * "what number comes next".
+ */
 export function newTicketId() {
   const n = Math.floor(Math.random() * 0xffffff).toString(16).toUpperCase().padStart(6, "0");
-  return `W-${n}`;
+  return `T-${n}`;
 }
 
 // ---------------------------------------------------------------------------

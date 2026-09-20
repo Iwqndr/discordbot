@@ -208,13 +208,27 @@ async def _build_member_row(member: discord.Member) -> dict:
         "user_id": str(member.id),
         "username": member.name,
         "display_name": member.display_name,
-        "avatar_url": member.display_avatar.url if member.display_avatar else "",
+        "avatar_url": _avatar_of(member),
         "banner_url": banner_url,
         "bio": bio,
         "roles": member_roles,
         "joined_at": member.joined_at.isoformat() if member.joined_at else None,
         "created_at": member.created_at.isoformat() if member.created_at else None,
     }
+
+
+def _avatar_of(member) -> str:
+    """The member's current face as a URL, empty when Discord has none.
+
+    Compared as a URL rather than a hash because that is what the page renders
+    and what the members table stores: Discord mints a new hash per upload, so a
+    changed picture is a changed string, and a re-upload of the same image
+    produces the same one and skips the write.
+    """
+    try:
+        return member.display_avatar.url if member.display_avatar else ""
+    except Exception:
+        return ""
 
 
 async def _push_member_to_supabase(member: discord.Member):
@@ -2505,9 +2519,39 @@ async def on_member_remove(member: discord.Member):
 async def on_member_update(before: discord.Member, after: discord.Member):
     before_ids = {r.id for r in before.roles}
     after_ids = {r.id for r in after.roles}
-    if before_ids == after_ids and before.display_name == after.display_name:
+    if (
+        before_ids == after_ids
+        and before.display_name == after.display_name
+        and _avatar_of(before) == _avatar_of(after)
+    ):
         return
     await _push_member_to_supabase(after)
+
+
+@bot.event
+async def on_user_update(before: discord.User, after: discord.User):
+    """Push a changed avatar or username, which no member event reports.
+
+    Discord tells us about a new avatar here, not through `on_member_update`: from
+    the guild's side nothing about the member changed, which is exactly what that
+    handler checks before deciding to skip. So the members table kept the old
+    picture until something else happened to rewrite the row — logging in again,
+    or `>syncmembers` — and the member page showed a stale avatar after a profile
+    change. The guild member shares this user object, so all this has to do is
+    rebuild the row once per guild we are in.
+    """
+    if after.bot:
+        return
+    if (
+        _avatar_of(before) == _avatar_of(after)
+        and before.display_name == after.display_name
+        and before.name == after.name
+    ):
+        return
+    for guild in list(bot.guilds):
+        member = guild.get_member(after.id)
+        if member is not None:
+            await _push_member_to_supabase(member)
 
 
 @bot.event

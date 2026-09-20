@@ -5707,7 +5707,7 @@ def api_ticket_create():
             return _fail(f"You already have {MAX_OPEN_TICKETS} open tickets. Please wait for a reply.")
         number = max([int(t.get("number") or 0) for t in rows] or [0]) + 1
         ticket = {
-            "id": f"T{number:04d}",
+            "id": _new_ticket_id(),
             "number": number,
             "user_id": user_id,
             "anonymous": anonymous,
@@ -6290,12 +6290,26 @@ def api_me_history():
 
 QUEUE_TABLE = "ticket_queue"
 INDEX_TABLE = "member_tickets"
+REPLY_TABLE = "ticket_reply_queue"
 ADMIN_STATUS_ID = "admin"
 
 QUEUE_BATCH = 10
 QUEUE_IDLE_SECONDS = 5.0        # between polls that found nothing
 QUEUE_BURST_SECONDS = 1.0       # after a poll that did find something
 ADMIN_HEARTBEAT_SECONDS = 45.0  # the page treats three minutes of silence as offline
+
+# How long a dealt-with queue row is kept before it is deleted.
+#
+# A processed row is a tombstone: it is what proves the site's write arrived and
+# the bot picked it up, which is the difference between "the queue is empty" and
+# "nobody is listening". Rows that are still unprocessed are NEVER pruned, however
+# old — that would drop somebody's ticket — so this window can be as short as it
+# is useful. Raise it if you want a longer trail to compare against a member's
+# "I sent it last night".
+QUEUE_RETENTION_HOURS = 24
+QUEUE_PRUNE_SECONDS = 600.0     # how often to look for rows old enough to drop
+
+_queue_pruned_at = 0.0
 
 _queue_thread = None
 _queue_thread_lock = threading.Lock()
@@ -6318,6 +6332,32 @@ def _queue_quote(value):
 
 def _queue_text(value, limit):
     return str(value or "").strip()[:limit]
+
+
+# A ticket id has one shape everywhere: T-XXXXXX. It is the number a member reads
+# off the site and quotes to staff, and it is what the staff channel shows, so it
+# has to be the same string in both places rather than a panel-local counter.
+SHARED_TICKET_ID_RE = re.compile(r"^T-[0-9A-F]{6}$")
+
+
+def _new_ticket_id():
+    """Mint a ticket id in the one shape the whole system uses."""
+    return "T-" + "".join(random.choice("0123456789ABCDEF") for _ in range(6))
+
+
+def _web_ticket_id(raw):
+    """The page's id for a ticket, or a freshly minted one.
+
+    The member page and the staff channel have to agree on what a ticket is
+    called, so a ticket filed from the page keeps the id the page gave it instead
+    of being renumbered on arrival: a member quoting "T-0F7EBB" has to find the
+    same ticket on the staff side. Only that one shape is adopted — anything else
+    (an empty value, something that would not survive being a lookup key, or an id
+    from before both sides shared a format) gets a new one, and the member's own
+    row is moved across to match, so the two never name it differently.
+    """
+    text = _queue_text(raw, 24).upper()
+    return text if SHARED_TICKET_ID_RE.match(text) else _new_ticket_id()
 
 
 def _queue_rows(limit=QUEUE_BATCH):
@@ -6366,9 +6406,11 @@ def _ticket_from_queue_row(row, number, member=None):
     """Turn one `ticket_queue` row into a ticket the panel understands.
 
     The two shapes are close but not identical. The page keys a ticket by
-    `ticket_id` (W-XXXXXX) and the panel numbers its own (T0001), so the web id
-    rides along as `web_id` — that is what lets the member's view be kept in step
-    with this one, and what makes a second pass over the same row a no-op.
+    `ticket_id` (T-XXXXXX) and that id is adopted as the panel's own, so the site,
+    the staff channel and the panel all call the same ticket the same thing. It
+    also still rides along as `web_id` — that is what lets the member's view be
+    kept in step with this one, and what makes a second pass over the same row a
+    no-op.
     """
     raw_user = _queue_text(row.get("discord_user_id"), 32)
     anonymous = bool(row.get("anonymous")) or not raw_user.isdigit()
@@ -6410,8 +6452,15 @@ def _ticket_from_queue_row(row, number, member=None):
         ) or display_name
         avatar_url = str(getattr(member, "display_avatar", "") or "")
 
+    # `web_id` is what the member's own row is filed under right now, which is
+    # the same string as the ticket's id for anything filed since both sides
+    # started using T-XXXXXX, and the old one for anything filed before that.
+    # They are kept apart so a rename has something to rename *from*.
+    web_id = _queue_text(row.get("ticket_id"), 40)
+    ticket_id = _web_ticket_id(web_id)
+
     return {
-        "id": f"T{number:04d}",
+        "id": ticket_id,
         "number": number,
         "user_id": user_id,
         "anonymous": anonymous,
@@ -6433,7 +6482,7 @@ def _ticket_from_queue_row(row, number, member=None):
         "updated_at": created_at,
         "replies": [],
         # --- what makes a member-page ticket different from a panel one ---
-        "web_id": _queue_text(row.get("ticket_id"), 40),
+        "web_id": web_id or ticket_id,
         "web_notified": False,
     }
 
@@ -6491,6 +6540,96 @@ def _sync_member_ticket(ticket, status=None):
     return 200 <= status_code < 300
 
 
+def _rename_member_ticket(old_id, new_id):
+    """Point the member's side at a ticket's new id. True when the rename is safe.
+
+    The id *is* the key over there: `member_tickets` and the reply queue both name
+    a ticket by it, so renaming this copy alone would leave the member looking at
+    a ticket that does not exist under the name they can see. Their side moves
+    first, and only a clean answer lets the panel's copy follow.
+
+    A PATCH matching nothing still answers 204, so "the member has no row under
+    that id" cannot be told apart from "renamed" — and does not need to be: if
+    their row was never written, `_sync_member_ticket` writes one under the new id
+    straight afterwards.
+    """
+    status, raw = _queue_request(
+        "PATCH",
+        f"{INDEX_TABLE}?ticket_id=eq.{_queue_quote(old_id)}",
+        data={"ticket_id": new_id, "updated_at": _utc_now()},
+        extra_headers={"Prefer": "return=minimal"},
+    )
+    if not 200 <= status < 300:
+        print(f"[tickets] could not rename {old_id} to {new_id} ({status}) {str(raw)[:160]}")
+        return False
+
+    # A queued reply names its ticket by id as well, so it has to follow. Best
+    # effort on purpose: the member's own list is the thing that was disagreeing
+    # with staff, and a reply that cannot be moved must not hold that up.
+    status, raw = _queue_request(
+        "PATCH",
+        f"{REPLY_TABLE}?ticket_id=eq.{_queue_quote(old_id)}",
+        data={"ticket_id": new_id},
+        extra_headers={"Prefer": "return=minimal"},
+    )
+    if not 200 <= status < 300:
+        print(f"[tickets] a queued reply may still point at {old_id} ({status}) {str(raw)[:160]}")
+    return True
+
+
+def _renumber_legacy_tickets():
+    """Give every ticket an id in the one shape both sides use: T-XXXXXX.
+
+    A ticket filed before ids were agreed on carries a panel-local `T0001` while
+    the member's page shows the `W-XXXXXX` it minted, so staff and member were
+    naming one ticket two different ways — the number quoted in the staff channel
+    did not find the ticket the member was looking at. New tickets adopt the
+    page's id, which settles it from here on; this settles the ones already
+    filed, by renaming the member's side first and only then the panel's copy. A
+    rename their side refused leaves the ticket exactly as it was, so the two can
+    never disagree about it, and the next start tries again. Idempotent: once both
+    sides say T-XXXXXX, there is nothing left to do.
+    """
+    with TICKET_LOCK:
+        rows = _load_tickets()
+
+    renamed = []
+    changed = 0
+    for ticket in rows:
+        current = _queue_text(ticket.get("id"), 40)
+        web_id = _queue_text(ticket.get("web_id"), 40)
+
+        if not web_id:
+            # Made in the panel, so nothing outside this file has ever seen the
+            # old name: safe to rename on its own.
+            if not SHARED_TICKET_ID_RE.match(current.upper()):
+                ticket["id"] = _new_ticket_id()
+                changed += 1
+            continue
+
+        if web_id == current and SHARED_TICKET_ID_RE.match(current.upper()):
+            continue
+
+        new_id = _new_ticket_id()
+        if not _rename_member_ticket(web_id, new_id):
+            continue
+        ticket["id"] = new_id
+        ticket["web_id"] = new_id
+        renamed.append(ticket)
+        changed += 1
+
+    if not changed:
+        return 0
+    with TICKET_LOCK:
+        _save_tickets(rows)
+    for ticket in renamed:
+        # Ties up the loose end a failed index insert leaves: the member's row now
+        # exists under the new id whether or not it existed under the old one.
+        _sync_member_ticket(ticket)
+    print(f"[tickets] gave {changed} existing ticket(s) an id in the shared format.")
+    return changed
+
+
 def _post_to_staff(ticket):
     """Post one ticket's embed, recording that it is done. True when it landed."""
     if not _notify_staff(ticket):
@@ -6522,6 +6661,13 @@ def _create_queued_ticket(row, web_id):
             ticket = _ticket_from_queue_row(
                 row, number, _guild_member(_queue_text(row.get("discord_user_id"), 32))
             )
+            if ticket["web_id"] and ticket["web_id"] != ticket["id"]:
+                # Filed under an older id shape. Move the member's own row onto the
+                # ticket's new name before anything refers to it by that name, and
+                # only drop the old one once that worked — while it has not, the two
+                # sides still agree, and the worker's tidy-up retries it next start.
+                if _rename_member_ticket(ticket["web_id"], ticket["id"]):
+                    ticket["web_id"] = ticket["id"]
             rows.append(ticket)
             _save_tickets(rows)
             fresh = True
@@ -6534,7 +6680,10 @@ def _create_queued_ticket(row, web_id):
     # the sweep's business — retrying it here is what would create duplicates.
     _queue_mark(row, {"status": ticket.get("status") or "open", "processed_at": _utc_now()})
     if fresh:
-        print(f"[tickets] {ticket['id']} created from the member page ({web_id}).")
+        # The page's id is normally the ticket's own id now, so only name it
+        # separately when the two differ — a ticket filed before that change.
+        origin = f" (page id {web_id})" if web_id and web_id != ticket["id"] else ""
+        print(f"[tickets] {ticket['id']} created from the member page{origin}.")
     return fresh
 
 
@@ -6583,6 +6732,35 @@ def flush_ticket_queue(limit=QUEUE_BATCH):
                   f"{type(exc).__name__}: {exc}")
     handled += _post_waiting_tickets()
     return handled
+
+
+def _prune_processed_rows(table, label, retention_hours=QUEUE_RETENTION_HOURS):
+    """Delete tombstones older than the retention window. Returns how many.
+
+    The filter is the important part: `processed_at=not.is.null` means an old row
+    still waiting for the bot is never touched, no matter how long it has been
+    sitting there. Deleting one of those would lose a member's ticket silently,
+    because nothing else knows it was ever sent.
+    """
+    if retention_hours <= 0:
+        return 0
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=retention_hours)
+    status, raw = _queue_request(
+        "DELETE",
+        f"{table}?processed_at=not.is.null&processed_at=lt.{_queue_quote(cutoff.isoformat(timespec='seconds'))}&select=id",
+        extra_headers={"Prefer": "return=representation"},
+    )
+    if not (200 <= status < 300):
+        print(f"[tickets] could not prune old {label} rows ({status}) {str(raw)[:160]}")
+        return 0
+    try:
+        removed = len(json.loads(raw) or [])
+    except Exception:
+        removed = 0
+    if removed:
+        print(f"[tickets] pruned {removed} {label} row(s) dealt with more than "
+              f"{retention_hours}h ago.")
+    return removed
 
 
 def admin_heartbeat(force=False):
@@ -6637,21 +6815,46 @@ def admin_heartbeat(force=False):
     return False
 
 
+def _queue_pass():
+    """One round of the worker: create what is waiting, say we are alive, tidy up.
+
+    Split out of the loop so a round is something that can be run and checked on
+    its own, and so no part of it can end the thread: a failure in any step is
+    reported and the next round tries again.
+    """
+    global _queue_pruned_at
+    handled = 0
+    try:
+        handled = flush_ticket_queue()
+    except Exception as exc:
+        print(f"[tickets] queue check failed: {type(exc).__name__}: {exc}")
+    try:
+        admin_heartbeat()
+    except Exception as exc:
+        print(f"[tickets] heartbeat failed: {type(exc).__name__}: {exc}")
+    # Housekeeping, not delivery: nothing below this line can affect whether a
+    # ticket gets created, so a failure here is never worth retrying hard.
+    if time.time() - _queue_pruned_at >= QUEUE_PRUNE_SECONDS:
+        _queue_pruned_at = time.time()
+        try:
+            _prune_processed_rows(QUEUE_TABLE, "queue")
+        except Exception as exc:
+            print(f"[tickets] pruning failed: {type(exc).__name__}: {exc}")
+    return handled
+
+
 def _queue_loop():
     """Poll the queue forever. Runs on its own thread: every step is a blocking
     HTTP call, and the bot's event loop must stay free for Discord."""
     print("[tickets] watching the member page's queue.")
+    try:
+        _renumber_legacy_tickets()
+    except Exception as exc:
+        # Cosmetic, and never worth losing the queue over.
+        print(f"[tickets] ticket id tidy-up failed: {type(exc).__name__}: {exc}")
     admin_heartbeat(force=True)
     while True:
-        handled = 0
-        try:
-            handled = flush_ticket_queue()
-        except Exception as exc:
-            print(f"[tickets] queue check failed: {type(exc).__name__}: {exc}")
-        try:
-            admin_heartbeat()
-        except Exception as exc:
-            print(f"[tickets] heartbeat failed: {type(exc).__name__}: {exc}")
+        handled = _queue_pass()
         time.sleep(QUEUE_BURST_SECONDS if handled else QUEUE_IDLE_SECONDS)
 
 
