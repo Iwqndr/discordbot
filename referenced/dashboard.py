@@ -200,6 +200,45 @@ def _oauth_ready():
     return bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET)
 
 
+# Set once the fixed login address has been probed, so a login never pays for it
+# twice.
+_authorize_uri_checked = False
+
+
+def _warn_if_authorize_uri_is_missing():
+    """Say so when the member site has no route at the fixed login address.
+
+    Every login finishes at `PANEL_AUTHORIZE_URI`, so when that address answers
+    404 the browser dead-ends on the member site and the panel never hears about
+    it: Discord sends the person there, the site has nothing to answer with, and
+    the whole thing looks like a bug in Discord or in the panel when it is
+    neither. The usual cause is simply that the member site has not been deployed
+    with the `functions/authorize.js` route yet.
+
+    Probed once per process and never fatal — the login is started either way,
+    because a transient probe failure must not lock anybody out.
+    """
+    global _authorize_uri_checked
+    if _authorize_uri_checked or not PANEL_AUTHORIZE_URI:
+        return
+    _authorize_uri_checked = True
+    try:
+        probe = urllib.request.Request(PANEL_AUTHORIZE_URI, headers=OAUTH_HEADERS)
+        with urllib.request.urlopen(probe, timeout=6) as resp:
+            status = getattr(resp, "status", 200)
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+    except Exception:
+        return
+    if status == 404:
+        print(
+            f"[login] {PANEL_AUTHORIZE_URI} answers 404, so a Discord login has nowhere "
+            f"to come back to and will dead-end in the browser. The member site needs "
+            f"functions/authorize.js (and the _lib/core.js it imports) deployed: see "
+            f"pages/README.md."
+        )
+
+
 def _refresh_session_member(stored):
     """Keep the session's copy of the account in step with Discord.
 
@@ -376,6 +415,7 @@ def auth_discord():
 
     if not _oauth_ready() or not PANEL_AUTHORIZE_URI:
         return redirect("/?login=unavailable")
+    _warn_if_authorize_uri_is_missing()
     params = {
         "client_id": DISCORD_CLIENT_ID,
         "redirect_uri": PANEL_AUTHORIZE_URI,
