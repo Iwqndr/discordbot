@@ -85,6 +85,23 @@ export function supaUpsert(env, table, row) {
   });
 }
 
+/**
+ * The address `main.py` last published, or null.
+ *
+ * The panel hands its public address to Supabase every time it starts, which is
+ * what makes a stable link possible: anything that has to send someone to the
+ * panel reads the current address from here instead of remembering one, so a new
+ * tunnel address (they are new on every restart) needs no configuration change
+ * anywhere.
+ */
+export async function tunnelInfo(env) {
+  const res = await supa(env, "bot_status?id=eq.tunnel&select=version,updated_at&limit=1");
+  const row = Array.isArray(res.rows) ? res.rows[0] : null;
+  const url = String(row?.version ?? "").trim().replace(/\/+$/, "");
+  if (!url) return null;
+  return { url, seenAt: row?.updated_at || null };
+}
+
 // ---------------------------------------------------------------------------
 // Session cookie — base64url payload plus an HMAC made with SESSION_SECRET
 // ---------------------------------------------------------------------------
@@ -115,6 +132,38 @@ async function hmacKey(secret) {
     false,
     ["sign", "verify"]
   );
+}
+
+/**
+ * Hex HMAC-SHA256 of `message`, the form the Python side compares against.
+ *
+ * `hmac.new(secret, message, hashlib.sha256).hexdigest()` in `dashboard.py` is
+ * the same string, so the two halves of the panel handoff check each other
+ * rather than each inventing a scheme.
+ */
+export async function hmacHex(secret, message) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(secret)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(message)));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Decode a base64url token into its JSON payload, or null when it is not one. */
+export function decodeB64urlJson(token) {
+  try {
+    const padded = String(token).replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
 }
 
 export async function sign(env, payload) {

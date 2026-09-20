@@ -11,6 +11,9 @@ import re
 import json
 import math
 import time
+import base64
+import hashlib
+import hmac
 import datetime
 import platform
 import subprocess
@@ -68,6 +71,7 @@ from config import (
     DISCORD_CLIENT_ID,
     DISCORD_CLIENT_SECRET,
     DISCORD_REDIRECT_URI,
+    PANEL_AUTHORIZE_URI,
     FLASK_SECRET_KEY,
     GUILD_ID,
     CATBOX_USERHASH,
@@ -284,53 +288,122 @@ def _safe_next(path, fallback="/"):
     return path[:200]
 
 
+# How long a login may sit at Discord before its state stops being accepted.
+PANEL_STATE_TTL = 600
+
+
+def _panel_state_sign(body: str) -> str:
+    """HMAC over the state body, or "" when no shared secret is configured.
+
+    `PANEL_HANDOFF_SECRET` is the one secret the panel and the member site both
+    hold, so it is what signs this. Hex, because the member site recomputes it
+    with WebCrypto and compares the two strings.
+    """
+    if not PANEL_HANDOFF_SECRET:
+        return ""
+    return hmac.new(
+        PANEL_HANDOFF_SECRET.encode("utf-8"), body.encode("ascii"), hashlib.sha256
+    ).hexdigest()
+
+
+def _panel_state(next_path: str, host: str = "") -> str:
+    """The `state` a panel login carries out to Discord and back.
+
+    Discord hands `state` back untouched, so it is where "this login started on
+    the panel, and it should land on /admin" travels. It matters because the
+    redirect_uri has to be a fixed address (`PANEL_AUTHORIZE_URI`, on the member
+    site) rather than the panel's own — the panel's tunnel address is new on every
+    restart, and a redirect registered for it would need editing in the Discord
+    app every time. The member site's `/authorize` reads this state to tell a
+    panel login apart from a visit to the site itself, then forwards the code on
+    to whatever tunnel is live.
+
+    Shape: `<base64url json>` or `<base64url json>.<hmac hex>` when a secret is
+    configured. Both the signature and the payload are checked over there; the
+    payload alone is what stops the site's own login from using that route.
+    """
+    payload = {
+        "v": 1,
+        "aud": "panel",
+        "next": _safe_next(next_path, "/admin"),
+        "exp": int(time.time()) + PANEL_STATE_TTL,
+    }
+    if host:
+        payload["host"] = str(host)[:120]
+    body = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    signature = _panel_state_sign(body)
+    return f"{body}.{signature}" if signature else body
+
+
+def _panel_state_next(state) -> str:
+    """Where the login should land, from the state Discord handed back.
+
+    Anything that is not a state this panel issued is treated as a plain path,
+    which is how a login started before this existed still finishes properly.
+    """
+    raw = str(state or "").strip()
+    if not raw:
+        return "/admin"
+    body = raw.split(".", 1)[0]
+    try:
+        padded = body + "=" * (-len(body) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except Exception:
+        return _safe_next(raw, "/admin")
+    if not isinstance(payload, dict) or payload.get("aud") != "panel":
+        return _safe_next(raw, "/admin")
+    return _safe_next(payload.get("next"), "/admin")
+
+
 @app.route("/auth/discord")
 def auth_discord():
     """Start a login.
 
-    Preferred route: bounce to the member site's `/dashboard`, which already
-    knows this person from its own session and will hand a signed proof back.
-    That keeps the panel's callback out of the picture entirely — which matters
-    because the tunnel address changes on every restart, and a callback
-    registered with Discord cannot keep up with that.
+    Discord is asked to send the person back to `PANEL_AUTHORIZE_URI` — a fixed
+    address on the member site — instead of to this panel. Nothing about that
+    address changes when the tunnel restarts, so the one redirect registered with
+    Discord keeps working; the member site reads the signed `state` and forwards
+    the login on to whichever tunnel is live at that moment.
 
-    Falls back to running OAuth here when the member site is not configured.
+    The member site's `/dashboard` handoff (`/auth/handoff`) is still there and
+    still silent, but it is no longer the entry point: it needs a secret on
+    *both* sides, and when only one side has it the visitor lands on a page that
+    cannot sign them in. This route works whether or not that is configured.
     """
-    if MEMBER_SITE_URL:
-        target = _safe_next(request.args.get("next"), "/admin")
-        return redirect(f"{MEMBER_SITE_URL}/dashboard?next={urllib.parse.quote(target)}")
+    target = _safe_next(request.args.get("next"), "/admin")
 
-    if not _oauth_ready():
+    if not _oauth_ready() or not PANEL_AUTHORIZE_URI:
         return redirect("/?login=unavailable")
     params = {
         "client_id": DISCORD_CLIENT_ID,
-        "redirect_uri": DISCORD_REDIRECT_URI,
+        "redirect_uri": PANEL_AUTHORIZE_URI,
         "response_type": "code",
         "scope": "identify",
         "prompt": "consent",
+        "state": _panel_state(target, request.host),
     }
-    # The redirect_uri is fixed in the Discord app settings, so where to land
-    # afterwards rides along in `state` and comes back untouched.
-    target = request.args.get("next")
-    if target:
-        params["state"] = _safe_next(target)
     return redirect(f"{DISCORD_AUTHORIZE_URL}?{urllib.parse.urlencode(params)}")
 
 
 @app.route("/auth/discord/callback")
 def auth_discord_callback():
     code = request.args.get("code")
-    back = _safe_next(request.args.get("state"))
+    back = _panel_state_next(request.args.get("state"))
     fail = f"{back}{'&' if '?' in back else '?'}login=failed"
     if not code or not _oauth_ready():
         return redirect(fail)
 
+    # Discord checks this against the redirect_uri the login was started with,
+    # so it has to be the fixed member-site address rather than this host — the
+    # browser is only here because that address forwarded it on.
     body = urllib.parse.urlencode({
         "client_id": DISCORD_CLIENT_ID,
         "client_secret": DISCORD_CLIENT_SECRET,
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": DISCORD_REDIRECT_URI,
+        "redirect_uri": PANEL_AUTHORIZE_URI or DISCORD_REDIRECT_URI,
     }).encode()
 
     try:

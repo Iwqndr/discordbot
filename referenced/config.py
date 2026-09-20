@@ -87,3 +87,18 @@ MEMBER_BOT_TOKEN = (os.getenv("MEMBER_BOT_TOKEN") or "").strip()
 # panel button builds `{MEMBER_SITE_URL}?open=support` from this, and the panel
 # preview in the dashboard shows the same link, so both halves always agree.
 MEMBER_SITE_URL = (os.getenv("MEMBER_SITE_URL") or "").strip().rstrip("/")
+
+# Where Discord sends a panel login once it is approved.
+#
+# This is a value you register ONCE with Discord (OAuth2 -> Redirects), so it has
+# to be an address that never changes. The panel's own address cannot be used:
+# its tunnel address is new on every restart, and every restart would then need
+# the Discord app edited to match. Pointing it at the member site's `/authorize`
+# instead means the fixed address answers, then forwards the login on to whatever
+# tunnel is live at that moment.
+#
+# Defaults to `<member site>/authorize`, which is what this deployment uses.
+PANEL_AUTHORIZE_URI = (
+    os.getenv("PANEL_AUTHORIZE_URI")
+    or (f"{MEMBER_SITE_URL}/authorize" if MEMBER_SITE_URL else DISCORD_REDIRECT_URI)
+).strip()

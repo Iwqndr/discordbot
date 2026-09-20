@@ -10,20 +10,7 @@
 // So this page does one job: it reads the tunnel address the host machine
 // published and offers it as a link.
 
-import { currentUser, supa } from "./_lib/core.js";
-
-/** The address `main.py` last published, or null. */
-export async function tunnelInfo(env) {
-  const res = await supa(env, "bot_status?id=eq.tunnel&select=version,updated_at&limit=1");
-  const row = Array.isArray(res.rows) ? res.rows[0] : null;
-  const url = String(row?.version ?? "").trim().replace(/\/+$/, "");
-  if (!url) return null;
-  return { url, seenAt: row?.updated_at || null };
-}
-
-function toHex(buffer) {
-  return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+import { currentUser, hmacHex, tunnelInfo } from "./_lib/core.js";
 
 /**
  * The panel's signature over `uid.expires`, as hex HMAC-SHA256.
@@ -33,19 +20,7 @@ function toHex(buffer) {
  * scheme. The secret is `PANEL_HANDOFF_SECRET`, held by both sides.
  */
 async function handoffSignature(env, uid, expires) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(env.PANEL_HANDOFF_SECRET),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const mac = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`${uid}.${expires}`)
-  );
-  return toHex(mac);
+  return hmacHex(env.PANEL_HANDOFF_SECRET, `${uid}.${expires}`);
 }
 
 /**
