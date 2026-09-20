@@ -7884,8 +7884,6 @@ function appendLiveReplies(ticket, fresh, startIndex) {
   });
 }
 
-/* Patch the row instead of re-rendering the whole list, so the open panel,
-   its scroll position and the reply textarea are all left alone. */
 function refreshTicketRows(list) {
   const head = ticketsBody.querySelector(".dot-count");
   if (head) head.textContent = `${hub.openCount} open`;
@@ -7907,7 +7905,6 @@ function refreshTicketRows(list) {
   });
 }
 
-/* Seed the seen counter so a fresh page load never shows everything unread. */
 function seedSeenCounts(list) {
   if (!hub.seenCounts) hub.seenCounts = {};
   (list || []).forEach(t => {
@@ -7926,7 +7923,7 @@ loadMemberProfile().then(() => {
     ensureMembersView(true);
   }
 });
-/* Panels that really scroll keep the wheel; everything else stays smooth. */
+
 markLenisScrollables();
 pollStatus();
 statusTimer = setInterval(pollStatus, 15000);

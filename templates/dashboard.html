@@ -16150,8 +16150,7 @@ function markSetupSeen() {
 function setupGroups() {
   const auth = state.adminAuth || {};
   const access = auth.access || {};
-  // The server always sends both lists, but the first-run card must never be
-  // the thing that breaks boot, so each one is checked before it is walked.
+
   const raw = auth.catalog || {};
   const sections = Array.isArray(raw.sections) ? raw.sections : [];
   const allCaps = Array.isArray(raw.caps) ? raw.caps : [];
@@ -16160,14 +16159,10 @@ function setupGroups() {
   const tabs = owner ? sections.map(s => s.id) : (access.tabs || []);
   const caps = owner ? allCaps.map(c => c.id) : (access.caps || []);
 
-  // The owner panel only ever lists as a page when the master key is actually
-  // open, so nobody is told about a section they cannot reach.
   const sectionItems = catalog.sections
     .filter(s => tabs.includes(s.id) && (owner || s.id !== 'owner'))
     .map(s => ({ icon: s.icon || 'layout-dashboard', t: s.label, d: s.desc || '' }));
 
-  // Capabilities keep their grouping so "Role manager" does not sit next to
-  // "Message purge" as if they were the same kind of thing.
   const byGroup = new Map();
   catalog.caps.filter(c => c.id !== 'owner_panel' && caps.includes(c.id)).forEach(c => {
     const g = c.group || 'Other';
@@ -16254,7 +16249,7 @@ function maybeShowSetup() {
 function finishSetup() {
   const modal = $('setup-modal');
   markSetupSeen();
-  // The panel animates in underneath while the overlay animates out.
+
   const app = $('app');
   if (app) app.classList.add('app-enter');
   document.documentElement.classList.remove('dash-setup');

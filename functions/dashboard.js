@@ -85,6 +85,12 @@ function page({ url, seenAt, stale }) {
     }
   })();
 
+  // A cloudflared quick tunnel has nothing in front of it, so the panel opens
+  // directly. loca.lt (the localtunnel fallback) answers browsers with its own
+  // 511 "Tunnel website ahead" page before it forwards anything, and that only
+  // goes away per browser — so say so only when the address is a loca.lt one.
+  const clickThrough = /\.loca\.lt$/i.test(host);
+
   let lastSeen = "";
   if (seenAt) {
     const seconds = Math.max(0, Math.round((Date.now() - new Date(seenAt).getTime()) / 1000));
@@ -151,9 +157,10 @@ function page({ url, seenAt, stale }) {
 
   <div class="note">
     <p>It runs on the host machine, so it only answers while that machine is on.</p>
-    <p>You may see a one-time "Tunnel website ahead" notice first. That is the
-       tunnel service asking for a click, not a problem with your account — once
-       you have clicked through it, it stops appearing.</p>
+    ${clickThrough
+      ? `<p>loca.lt shows a "Tunnel website ahead" page before the panel loads. It is
+           the tunnel service asking for a click, not a problem with your account.</p>`
+      : ""}
   </div>
 </div></body></html>`;
 
