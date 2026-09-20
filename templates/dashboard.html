@@ -447,6 +447,22 @@
 
   /* MEMBER PROFILE PANEL */
   .profile-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+
+  /* CURRENCY MODAL */
+  .cur-wallet {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 12px 14px; border-radius: 14px; margin-bottom: 12px;
+    border: 2px solid color-mix(in srgb, var(--accent) 26%, transparent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+  .cur-wallet span { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .cur-wallet b { font-family: 'Fredoka', sans-serif; font-size: 22px; font-weight: 700; }
+  .cur-wallet .cur-bank { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+  .cur-preview { margin-top: 10px; font-weight: 800; font-size: 13.5px; transition: color .18s ease; }
+  .cur-preview.add { color: var(--good); }
+  .cur-preview.sub { color: var(--bad); }
+  .cur-preview.idle { color: var(--muted); }
+  .cur-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   .profile-touch-note {
     display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px;
     font-size: 12px; font-weight: 700; color: var(--bad);
@@ -2092,6 +2108,15 @@
   .ra-row-txt { flex: 1; min-width: 0; }
   .ra-row-t { font-size: 13.5px; font-weight: 800; }
   .ra-row-d { font-size: 12px; font-weight: 600; color: var(--muted); margin-top: 2px; }
+  /* "Off by default": a command an unsaved role does not inherit (the money
+     pair), so the editor says so rather than looking like it disagrees with the
+     bot. */
+  .ra-tag {
+    display: inline-block; margin-left: 7px; padding: 1px 7px; border-radius: 999px;
+    font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent); vertical-align: 1px;
+  }
   .ra-preset {
     display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left; cursor: pointer;
     margin-bottom: 8px; padding: 13px 14px; border-radius: 14px; border: 2px solid var(--border-soft);
@@ -3109,6 +3134,7 @@
                    profile card only carries what is not a punishment. -->
               <div class="profile-actions">
                 <button class="btn btn-accent" id="act-checkbg" data-cap="member_mod"><i data-lucide="shield-check"></i> Check Background</button>
+                <button class="btn btn-accent" id="act-currency" data-cap="currency"><i data-lucide="coins"></i> Currency</button>
                 <button class="btn btn-danger" id="act-mod-view" data-cap="member_mod"><i data-lucide="gavel"></i> Mod View</button>
                 <span class="profile-touch-note hidden" id="profile-touch-note"></span>
               </div>
@@ -4875,6 +4901,48 @@
   </div>
 </div>
 
+<!-- CURRENCY MODAL — give or take coins. A delta: "-1000" takes a thousand. -->
+<div class="modal" id="currency-modal">
+  <div class="modal-bg" data-close="currency-modal"></div>
+  <div class="modal-card sm">
+    <div class="modal-head">
+      <i data-lucide="coins" style="color:var(--warn)"></i>
+      <div style="flex:1;min-width:0">
+        <div class="h2" id="cur-title">Currency</div>
+        <div class="card-sub" id="cur-sub">Add or take coins</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="cur-wallet">
+        <div>
+          <span>Current balance</span>
+          <div><b id="cur-balance">0</b></div>
+        </div>
+        <div class="cur-bank" id="cur-extra"></div>
+      </div>
+      <div class="field">
+        <label>Amount — positive adds, negative removes</label>
+        <input class="input mono" id="cur-amount" placeholder="1000  ·  -500  ·  1K  ·  2.5M"
+               autocomplete="off" spellcheck="false" inputmode="text">
+      </div>
+      <div class="cur-preview idle" id="cur-preview">Enter an amount to see the balance after it.</div>
+      <div class="cur-chips">
+        <button class="btn btn-sm" data-cur-quick="100">+100</button>
+        <button class="btn btn-sm" data-cur-quick="1K">+1K</button>
+        <button class="btn btn-sm" data-cur-quick="10K">+10K</button>
+        <button class="btn btn-sm" data-cur-quick="100K">+100K</button>
+        <button class="btn btn-sm" data-cur-quick="1M">+1M</button>
+        <button class="btn btn-sm" data-cur-quick="-1K">-1K</button>
+      </div>
+      <div class="card-sub" id="cur-error" style="color:var(--bad);margin-top:8px"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="currency-modal">Cancel</button>
+      <button class="btn btn-accent" id="cur-ok"><i data-lucide="check"></i> Apply (Enter)</button>
+    </div>
+  </div>
+</div>
+
 <div class="toasts" id="toasts"></div>
 
 <script>
@@ -6540,6 +6608,145 @@ function paintMemberProfile(p, userId) {
   $('pf-status').textContent = p.status || 'Online';
 }
 
+/* ----------------------------------------------------------------
+   CURRENCY — give or take coins from the member card
+   ----------------------------------------------------------------
+   A delta, not a target: "1000" adds a thousand, "-1000" takes it away, and
+   the preview line says which of the two it is before anything is sent. The
+   write goes to the shared `economy` table, so the member page shows it at once
+   and the member bot adopts it into `>bal` on its next pass. */
+const CUR = { userId: '', name: '', economy: null, busy: false };
+
+/* Mirrors parse_money() in referenced/config.py, so the preview never promises
+   a number the server would refuse. */
+function curParse(raw) {
+  const text = String(raw ?? '').trim().toLowerCase().replace(/[,_ ]/g, '');
+  if (!text) return null;
+  const negative = text.startsWith('-');
+  let body = negative ? text.slice(1) : text;
+  const suffixes = { k: 1e3, m: 1e6, b: 1e9, t: 1e12 };
+  let multiplier = 1;
+  const last = body.slice(-1);
+  if (suffixes[last]) { multiplier = suffixes[last]; body = body.slice(0, -1); }
+  if (!body || !/^[0-9]*\.?[0-9]+$/.test(body)) return null;
+  const value = Math.round(parseFloat(body) * multiplier);
+  if (!isFinite(value) || Math.abs(value) > 1e12) return null;
+  return negative ? -value : value;
+}
+
+function curMoney(n) {
+  return Number(n || 0).toLocaleString();
+}
+
+function curUpdatePreview() {
+  const input = $('cur-amount');
+  if (!input) return;
+  const preview = $('cur-preview');
+  const balance = Number((CUR.economy && CUR.economy.balance) || 0);
+  const raw = input.value.trim();
+  preview.className = 'cur-preview idle';
+  if (!raw) {
+    preview.textContent = 'Enter an amount to see the balance after it.';
+    return;
+  }
+  const delta = curParse(raw);
+  if (delta === null) {
+    preview.textContent = 'That is not an amount — try 500, 1K, 2.5M or -1B (1T is the ceiling).';
+    return;
+  }
+  const after = Math.max(0, Math.min(1e12, balance + delta));
+  if (after === balance) {
+    preview.textContent = `Balance stays at ${curMoney(after)} coins.`;
+    return;
+  }
+  const gained = after > balance;
+  preview.className = 'cur-preview ' + (gained ? 'add' : 'sub');
+  preview.textContent = `${gained ? 'Adding +' : 'Removing -'}${curMoney(Math.abs(after - balance))} `
+    + `Coins, Balance after = ${curMoney(after)}`;
+}
+
+function curPaintWallet() {
+  const econ = CUR.economy || {};
+  if ($('cur-balance')) $('cur-balance').textContent = `${curMoney(econ.balance)} coins`;
+  if ($('cur-extra')) {
+    const bits = [];
+    if (econ.bank) bits.push(`bank ${curMoney(econ.bank)}`);
+    if (econ.level) bits.push(`level ${econ.level}`);
+    if (econ.known === false) bits.push('no record yet');
+    $('cur-extra').textContent = bits.join(' · ');
+  }
+}
+
+function openCurrencyModal(userId, profile, economy) {
+  CUR.userId = String(userId);
+  CUR.name = (profile && (profile.display_name || profile.name)) || 'this member';
+  CUR.economy = economy || { balance: 0, known: false };
+  if ($('cur-title')) $('cur-title').textContent = `Currency — ${CUR.name}`;
+  if ($('cur-sub')) {
+    $('cur-sub').textContent = 'Positive adds, negative takes away. Press Enter to apply.';
+  }
+  if ($('cur-amount')) $('cur-amount').value = '';
+  if ($('cur-error')) $('cur-error').textContent = '';
+  curPaintWallet();
+  curUpdatePreview();
+  openModal('currency-modal');
+  setTimeout(() => { const el = $('cur-amount'); if (el) el.focus(); }, 80);
+}
+
+async function submitCurrency() {
+  if (CUR.busy) return;
+  const input = $('cur-amount');
+  const delta = curParse(input.value);
+  if (delta === null) {
+    $('cur-error').textContent = 'Enter an amount like 500, 1K, 2.5M or -1B.';
+    return;
+  }
+  if (delta === 0) {
+    $('cur-error').textContent = 'That amount is zero, so nothing would change.';
+    return;
+  }
+  CUR.busy = true;
+  const okBtn = $('cur-ok');
+  if (okBtn) okBtn.disabled = true;
+  $('cur-error').textContent = '';
+  const data = await api(`/api/member/${state.guild.guild_id}/${CUR.userId}/currency`,
+                         { amount: input.value.trim() });
+  CUR.busy = false;
+  if (okBtn) okBtn.disabled = false;
+  if (!data || data.status !== 'success') {
+    const message = (data && data.message) || 'Could not change the currency.';
+    $('cur-error').textContent = message;
+    toast(message, 'error');
+    return;
+  }
+  if (data.economy) CUR.economy = data.economy;
+  curPaintWallet();
+  input.value = '';
+  curUpdatePreview();
+  // The member card's own copy follows, so reopening the modal never shows a
+  // stale balance and the next click has nothing to wait for.
+  const cached = state.members.find(m => String(m.id) === CUR.userId);
+  if (cached && cached.economy) cached.economy.balance = CUR.economy.balance;
+  toast(data.message || 'Currency updated.', 'success');
+  input.focus();
+}
+
+if ($('cur-amount')) {
+  $('cur-amount').oninput = curUpdatePreview;
+  $('cur-amount').onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submitCurrency(); }
+  };
+}
+if ($('cur-ok')) $('cur-ok').onclick = () => submitCurrency();
+document.querySelectorAll('[data-cur-quick]').forEach(btn => {
+  btn.onclick = () => {
+    const input = $('cur-amount');
+    input.value = btn.dataset.curQuick;
+    curUpdatePreview();
+    input.focus();
+  };
+});
+
 /* Raw ISO timestamps (2026-04-21T22:19:58.364000+00:00) are unreadable at a
    glance, so every date the panel draws goes through here: a short local date,
    a 24h time, and the rough age on the title for anyone who wants it. */
@@ -6617,6 +6824,12 @@ async function openMember(userId) {
   // for everything that acts on them.
   const modBtn = $('act-mod-view');
   if (modBtn) modBtn.onclick = () => openModViewModal(userId, p);
+
+  // The Currency button opens on the coins the site is showing, from the same
+  // response, so its preview maths never guesses.
+  state.economy = (data && data.economy) || null;
+  const curBtn = $('act-currency');
+  if (curBtn) curBtn.onclick = () => openCurrencyModal(userId, p, state.economy);
 
   // If this account outranks us, say so on the card and lock the button, using
   // the answer the server just gave — the same rule the endpoints enforce.
@@ -11500,6 +11713,7 @@ const RA_PAGES = [
   { id: 'custom', label: 'Full customization', icon: 'sliders-horizontal' },
   { id: 'sections', label: 'Dashboard sections', icon: 'panel-top' },
   { id: 'capabilities', label: 'Capabilities', icon: 'puzzle' },
+  { id: 'commands', label: 'Commands', icon: 'terminal' },
   { id: 'editor', label: 'Role editor', icon: 'user-cog' },
   { id: 'titles', label: 'Staff titles', icon: 'badge-check' },
   { id: 'presets', label: 'Presets', icon: 'wand-sparkles' },
@@ -11553,15 +11767,67 @@ function raDerivedCaps(roleId) {
   return derived.filter(c => known.includes(c));
 }
 
+function raAllCommandIds() {
+  return (RA.registry.commands || []).map(c => c.id);
+}
+
+/* The commands an unsaved role already has. Everything except the ones the
+   catalogue marks `default_off` — the server refuses those for a role with no
+   saved list (see command_grant_for_roles and the bot's toggle gate), so the
+   editor shows them off rather than promising access the bot would deny. */
+function raDefaultCommandIds() {
+  return (RA.registry.commands || [])
+    .filter(c => c && !c.default_off)
+    .map(c => c.id);
+}
+
+/* A saved command list is explicit. A role with no saved entry keeps every
+   command — the server decides the same way (see command_grant_for_roles), so
+   the editor never shows a role as more restricted than the bot treats it. */
 function raEffective(roleId) {
   const entry = RA.draft[String(roleId)];
-  if (entry) return { tabs: entry.tabs || [], caps: entry.caps || [], inherits: false };
-  return { tabs: [], caps: raDerivedCaps(roleId), inherits: true };
+  if (entry) {
+    return {
+      tabs: entry.tabs || [],
+      caps: entry.caps || [],
+      commands: Array.isArray(entry.commands) ? entry.commands.slice() : raAllCommandIds(),
+      inherits: false,
+    };
+  }
+  return { tabs: [], caps: raDerivedCaps(roleId), commands: raDefaultCommandIds(), inherits: true };
 }
 
 function raIsOn(kind, id) {
   const eff = raEffective(RA.roleId);
-  return (kind === 'tabs' ? eff.tabs : eff.caps).includes(id);
+  const list = kind === 'tabs' ? eff.tabs : (kind === 'commands' ? (eff.commands || []) : eff.caps);
+  return list.includes(id);
+}
+
+/* Capabilities and commands cover the same ground for a good few of them (kick,
+   ban, purge…), so the two lists are kept in step: switching a capability off
+   switches its commands off with it, switching one on hands them back, and a
+   command switched off takes its capability with it once nothing is left in it. */
+function raCommandsForCap(capId) {
+  return (RA.registry.commands || []).filter(c => c && c.cap === capId);
+}
+
+function raLinkAfterCapChange(entry, capId, on) {
+  const linked = raCommandsForCap(capId);
+  if (!linked.length) return;
+  const ids = new Set(entry.commands || []);
+  linked.forEach(c => { if (on) ids.add(c.id); else ids.delete(c.id); });
+  entry.commands = raAllCommandIds().filter(id => ids.has(id));
+}
+
+function raLinkAfterCommandChange(entry, commandId) {
+  const command = (RA.registry.commands || []).find(c => c.id === commandId);
+  if (!command || !command.cap) return;
+  const linked = raCommandsForCap(command.cap);
+  const on = (entry.commands || []).includes(commandId);
+  const caps = new Set(entry.caps || []);
+  if (on) caps.add(command.cap);
+  else if (!linked.some(c => (entry.commands || []).includes(c.id))) caps.delete(command.cap);
+  entry.caps = (RA.registry.capabilities || []).map(c => c.id).filter(id => caps.has(id));
 }
 
 /* Flipping one switch patches that row in place instead of rebuilding the
@@ -11593,20 +11859,44 @@ function raCounters() {
 function raToggle(kind, id) {
   if (!RA.roleId) return toast('Pick a role first.', 'error');
   const eff = raEffective(RA.roleId);
-  const entry = { tabs: eff.tabs.slice(), caps: eff.caps.slice() };
-  const list = kind === 'tabs' ? entry.tabs : entry.caps;
+  const entry = { tabs: eff.tabs.slice(), caps: eff.caps.slice(), commands: (eff.commands || []).slice() };
+  const list = kind === 'tabs' ? entry.tabs : (kind === 'commands' ? entry.commands : entry.caps);
   const at = list.indexOf(id);
   const on = at === -1;
   if (on) list.push(id); else list.splice(at, 1);
+
+  if (kind === 'caps') raLinkAfterCapChange(entry, id, on);
+  if (kind === 'commands') raLinkAfterCommandChange(entry, id);
+
   RA.draft[RA.roleId] = entry;
   RA.dirty = true;
   raPatchRow(kind, id, on);
+  // The rows the link just moved follow in the same frame, so a capability and
+  // its commands visibly travel together instead of one lagging behind.
+  if (kind === 'caps') {
+    raCommandsForCap(id).forEach(c => raPatchRow('commands', c.id, entry.commands.includes(c.id)));
+  } else if (kind === 'commands') {
+    const command = (RA.registry.commands || []).find(c => c.id === id);
+    if (command && command.cap) raPatchRow('caps', command.cap, entry.caps.includes(command.cap));
+  }
   raCounters();
+}
+
+/* A preset's commands are the ones its capabilities cover, plus the read-only
+   lookups that have no capability of their own — so "Moderator" never hands out
+   the money commands unless Currency itself is in the preset. */
+function raPresetCommands(preset) {
+  const caps = new Set(preset.caps || []);
+  return (RA.registry.commands || []).filter(c => !c.cap || caps.has(c.cap)).map(c => c.id);
 }
 
 function raApplyPreset(preset) {
   if (!RA.roleId) return toast('Pick a role first.', 'error');
-  RA.draft[RA.roleId] = { tabs: preset.tabs.slice(), caps: preset.caps.slice() };
+  RA.draft[RA.roleId] = {
+    tabs: preset.tabs.slice(),
+    caps: preset.caps.slice(),
+    commands: raPresetCommands(preset),
+  };
   RA.dirty = true;
   toast(`Preset “${preset.label}” staged — hit Save this role to keep it.`, 'info');
   renderRa();
@@ -11615,15 +11905,34 @@ function raApplyPreset(preset) {
 function raSetAll(kind, on) {
   if (!RA.roleId) return toast('Pick a role first.', 'error');
   const eff = raEffective(RA.roleId);
-  const source = kind === 'tabs' ? RA.registry.sections : RA.registry.capabilities;
-  const ids = on ? source.map(s => s.id) : [];
-  RA.draft[RA.roleId] = kind === 'tabs'
-    ? { tabs: ids, caps: eff.caps.slice() }
-    : { tabs: eff.tabs.slice(), caps: ids };
+  const entry = { tabs: eff.tabs.slice(), caps: eff.caps.slice(), commands: (eff.commands || []).slice() };
+
+  if (kind === 'tabs') {
+    entry.tabs = on ? RA.registry.sections.map(s => s.id) : [];
+  } else if (kind === 'caps') {
+    entry.caps = on ? RA.registry.capabilities.map(c => c.id) : [];
+    // The commands that belong to those capabilities follow, exactly as they do
+    // switch by switch.
+    (RA.registry.capabilities || []).forEach(c => raLinkAfterCapChange(entry, c.id, on));
+  } else {
+    entry.commands = on ? raAllCommandIds() : [];
+    (RA.registry.capabilities || []).forEach(c => {
+      const linked = raCommandsForCap(c.id);
+      if (!linked.length) return;
+      const everyOn = linked.every(x => (entry.commands || []).includes(x.id));
+      const caps = new Set(entry.caps || []);
+      if (everyOn) caps.add(c.id); else caps.delete(c.id);
+      entry.caps = (RA.registry.capabilities || []).map(x => x.id).filter(id => caps.has(id));
+    });
+  }
+
+  RA.draft[RA.roleId] = entry;
   RA.dirty = true;
   // Flip every switch in place rather than rebuilding the page, so the
   // switch and row transitions actually get to play.
-  source.forEach(item => raPatchRow(kind, item.id, !!on));
+  (RA.registry.sections || []).forEach(s => raPatchRow('tabs', s.id, (entry.tabs || []).includes(s.id)));
+  (RA.registry.capabilities || []).forEach(c => raPatchRow('caps', c.id, (entry.caps || []).includes(c.id)));
+  (RA.registry.commands || []).forEach(c => raPatchRow('commands', c.id, (entry.commands || []).includes(c.id)));
   raCounters();
 }
 
@@ -11633,11 +11942,12 @@ function raMatch(item) {
 }
 
 function raRowHtml(kind, item, on) {
+  const tag = item.default_off ? '<span class="ra-tag">Off by default</span>' : '';
   return `
     <div class="ra-row ${on ? 'on' : ''}">
       <span class="ra-row-ic"><i data-lucide="${esc(item.icon || 'circle')}"></i></span>
       <span class="ra-row-txt">
-        <span class="ra-row-t">${esc(item.label)}</span>
+        <span class="ra-row-t">${esc(item.label)}${tag}</span>
         <span class="ra-row-d">${esc(item.desc || '')}</span>
       </span>
       <button type="button" class="perm-switch ${on ? 'on' : ''}" data-ra-toggle="${kind}:${esc(item.id)}"
@@ -11649,6 +11959,47 @@ function raSectionsList() {
   const items = RA.registry.sections.filter(raMatch);
   if (!items.length) return '<div class="ra-empty">No section matches that search.</div>';
   return items.map(s => raRowHtml('tabs', s, raIsOn('tabs', s.id))).join('');
+}
+
+/* The Commands page: one switch per command, grouped and in the server's rank
+   order (bans first, lookups last), with a single Enable all toggle on top. */
+function raCommandsToolbar() {
+  const ids = raAllCommandIds();
+  const eff = raEffective(RA.roleId);
+  const on = ids.filter(id => (eff.commands || []).includes(id)).length;
+  const all = ids.length > 0 && on === ids.length;
+  const count = ids.length - on;
+  return `
+    <div class="ra-group">
+      <div class="ra-group-head">All commands</div>
+      ${raRowHtml('commands', {
+        id: '__all__', icon: 'zap', label: 'Enable all commands',
+        desc: all ? `All ${ids.length} commands are on for this role.`
+                  : `${on} of ${ids.length} on — switch this on to grant the rest.`,
+      }, false).replace('data-ra-toggle="commands:__all__"', `data-ra-all-toggle="1"`)}
+    </div>`;
+}
+
+function raCommandsList() {
+  const items = (RA.registry.commands || []).filter(raMatch);
+  if (!items.length) return '<div class="ra-empty">No command matches that search.</div>';
+  const eff = raEffective(RA.roleId);
+  const on = eff.commands || [];
+  // Groups in catalogue order, rows untouched inside them: the rank is the
+  // server's, not the alphabet's.
+  const groups = [];
+  items.forEach(c => { if (c.group && !groups.includes(c.group)) groups.push(c.group); });
+  return groups.map(group => {
+    const rows = items.filter(c => (c.group || 'Other') === group);
+    const onHere = rows.filter(c => on.includes(c.id)).length;
+    return `
+    <div class="ra-group">
+      <div class="ra-group-head">${esc(group)}
+        <span style="float:right;font-size:10.5px;font-weight:800;color:var(--muted)">${onHere}/${rows.length}</span>
+      </div>
+      ${rows.map(c => raRowHtml('commands', c, on.includes(c.id))).join('')}
+    </div>`;
+  }).join('');
 }
 
 function raCapsList() {
@@ -11718,6 +12069,7 @@ function raSummaryHtml(eff) {
       <div class="ra-summary-row"><span>Role</span><b>${esc(role.name)}</b></div>
       <div class="ra-summary-row"><span>Dashboard sections</span><b>${eff.tabs.length} / ${RA.registry.sections.length}</b></div>
       <div class="ra-summary-row"><span>Capabilities</span><b>${eff.caps.length} / ${RA.registry.capabilities.length}</b></div>
+      <div class="ra-summary-row"><span>Commands enabled</span><b>${(eff.commands || []).length} / ${raAllCommandIds().length}</b></div>
       <div class="ra-summary-row"><span>Source</span><b>${eff.inherits ? 'Not configured — read from Discord' : (RA.dirty ? 'Unsaved changes' : 'Saved entry')}</b></div>
     </div>
     <div class="ra-group"><div class="ra-group-head">Sections</div>${raChips(allTabs, eff.tabs)}</div>
@@ -11727,10 +12079,13 @@ function raSummaryHtml(eff) {
 function renderRaNav(eff) {
   const nav = $('ra-nav');
   if (!nav) return;
+  const allCommands = raAllCommandIds();
+  const commandsOn = allCommands.filter(id => (eff.commands || []).includes(id)).length;
   const counts = {
     custom: `${eff.tabs.length + eff.caps.length}`,
     sections: `${eff.tabs.length}/${RA.registry.sections.length}`,
     capabilities: `${eff.caps.length}/${RA.registry.capabilities.length}`,
+    commands: `${commandsOn}/${allCommands.length}`,
     editor: (() => { const n = Object.values(RA.draft || {}).filter(e => e && e.editor).length; return n ? `${n}` : ''; })(),
     titles: `${rtDraft().length}`,
     presets: `${(RA.registry.presets || []).length}`,
@@ -11774,6 +12129,7 @@ function renderRaBody(eff) {
   else if (RA.page === 'summary') raPaintPage(body, raSummaryHtml(eff));
   else if (RA.page === 'sections') raPaintPage(body, raInheritNote(eff) + raToolbar('tabs') + `<div class="ra-group"><div class="ra-group-head">Dashboard sections</div>${raSectionsList()}</div>`);
   else if (RA.page === 'capabilities') raPaintPage(body, raInheritNote(eff) + raToolbar('caps') + raCapsList());
+  else if (RA.page === 'commands') raPaintPage(body, raInheritNote(eff) + raCommandsToolbar() + raCommandsList());
   else raPaintPage(body, raInheritNote(eff) + raToolbar('tabs') +
     `<div class="ra-group"><div class="ra-group-head">Dashboard sections</div>${raSectionsList()}</div>` +
     raToolbar('caps') + raCapsList());
@@ -11788,6 +12144,13 @@ function renderRaBody(eff) {
     btn.onclick = () => {
       const [kind, on] = btn.dataset.raAll.split(':');
       raSetAll(kind, on === '1');
+    };
+  });
+  body.querySelectorAll('[data-ra-all-toggle]').forEach(sw => {
+    sw.onclick = () => {
+      const ids = raAllCommandIds();
+      const on = (raEffective(RA.roleId).commands || []).filter(id => ids.includes(id)).length;
+      raSetAll('commands', on !== ids.length);
     };
   });
   body.querySelectorAll('[data-ra-preset]').forEach(btn => {
@@ -13232,8 +13595,11 @@ async function saveRoleAccess() {
     // The editor block rides along untouched, so saving sections on one page
     // never wipes what the Role editor page set up.
     const saved = RA.draft[String(RA.roleId)] || {};
+    // `commands` always goes out as an explicit list: that is what turns the
+    // toggles on for a role, and what the bot enforces from then on.
     payload = { ...payload, role_id: RA.roleId,
-      entry: { tabs: entry.tabs, caps: entry.caps, editor: saved.editor } };
+      entry: { tabs: entry.tabs, caps: entry.caps,
+               commands: entry.commands || [], editor: saved.editor } };
   }
 
   const data = await api('/api/owner/access', payload);

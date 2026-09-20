@@ -64,8 +64,16 @@ from antiraid import (
     is_media_only,
     is_selfpromo_channel,
 )
-from supabase_helper import fetch_member, fetch_stored_banners
+from supabase_helper import (
+    add_currency,
+    fetch_economy,
+    fetch_member,
+    fetch_stored_banners,
+    upsert_staff_titles,
+)
 from config import (
+    MONEY_MAX,
+    parse_money,
     TICKET_CHANNEL_ID,
     TICKET_PING_ROLE_ID,
     DISCORD_CLIENT_ID,
@@ -2468,6 +2476,92 @@ def api_member_profile(guild_id, user_id):
         "log_link": log_link,
         "supabase": supabase_row,
         "thread_ids": thread_index.all_thread_ids(guild.id, uid),
+        # What the member page is showing for their coins, so the Currency button
+        # opens on the same number instead of guessing at one.
+        "economy": _economy_snapshot(uid),
+        "currency_input_help": "500  ·  1K  ·  2.5M  ·  -1B",
+    })
+
+
+def _economy_snapshot(uid):
+    """The stored coins for a member, as the member site would show them.
+
+    Read from Supabase rather than the member bot's own file: that table is the
+    copy the panel writes and the bot adopts, so it is the number that already
+    matches the site.
+    """
+    try:
+        row = fetch_economy(str(uid))
+    except Exception:
+        row = None
+    if not row:
+        return {"balance": 0, "bank": 0, "level": 1, "xp": 0, "known": False,
+                "max": MONEY_MAX}
+    return {
+        "balance": int(row.get("balance") or 0),
+        "bank": int(row.get("bank") or 0),
+        "level": int(row.get("level") or 1),
+        "xp": int(row.get("xp") or 0),
+        "known": True,
+        "max": MONEY_MAX,
+    }
+
+
+@app.route("/api/member/<guild_id>/<user_id>/currency", methods=["POST"])
+def api_member_currency(guild_id, user_id):
+    """Add to, or take from, a member's coins. Backs the Currency button.
+
+    `amount` is a delta — "-1000" takes a thousand — and the write goes to the
+    shared `economy` table, which the member page already reads and the member
+    bot adopts into its own records, so one write lands on the site, in the
+    panel and in Discord.
+    """
+    gate = _require_cap("currency", "the Currency capability")
+    if gate is not None:
+        return gate
+
+    guild = bot.get_guild(int(guild_id)) if bot else None
+    if not guild:
+        return _fail("Guild not found.", 404)
+
+    uid = str(user_id or "").strip()
+    if not uid.isdigit():
+        return _fail("That member has no usable Discord id.")
+
+    data = request.json or {}
+    amount_raw = data.get("amount", data.get("delta"))
+    delta = parse_money(amount_raw)
+    if delta is None:
+        return _fail("Enter an amount like 500, 1K, 2.5M or -1B (up to 1T).")
+    if delta == 0:
+        return _fail("That amount is zero, so nothing would change.")
+
+    ok, before, after, error = add_currency(uid, delta)
+    if not ok:
+        return _fail(error or "Could not change the currency.", 502)
+
+    member = guild.get_member(int(uid))
+    who = member.display_name if member else f"user {uid}"
+    verb = "Added" if after >= before else "Removed"
+    moved = abs(after - before)
+
+    # Money is a staff action like any other: it belongs in the member's history
+    # so "who emptied this wallet" is answerable later.
+    try:
+        actor = _current_member() or {}
+        history_tracker.record(guild.id, int(uid), "currency",
+                               int(actor.get("user_id") or 0),
+                               f"{verb} {moved:,} coins ({before:,} -> {after:,})")
+    except Exception:
+        pass
+
+    return jsonify({
+        "status": "success",
+        "message": f"{verb} {moved:,} coins — {who} now has {after:,}.",
+        "before": before,
+        "after": after,
+        "moved": moved,
+        "economy": _economy_snapshot(uid),
     })
 
 
@@ -3032,6 +3126,197 @@ DASH_CAPS = [
     {"id": "member_management_bypass", "group": "System", "icon": "shield-off",
      "label": "Bypass member management limits",
      "desc": "Skips the mass-action cooling-off period and can clear active cooldowns from the Member Management panel."},
+    {"id": "currency", "group": "Members", "icon": "coins",
+     "label": "Currency",
+     "desc": "Give or take coins — the member view's Currency button and the bot's money commands."},
+]
+
+# ----------------------------------------------------------
+# The Discord commands an owner can switch on and off per role.
+#
+# Ordered by how much damage the command can do, not alphabetically: bans and
+# kicks first, reading material last. `cap` links a command to the capability
+# that covers the same ground, so the two switches cannot disagree — see
+# `_link_commands_to_caps` on the client and `command_grant_for_roles` here.
+#
+# Staff-only by construction: every entry is a command of the admin bot, so no
+# member command ever appears in this list.
+# ----------------------------------------------------------
+
+_COMMAND_CATALOGUE = [
+    # Bans & kicks
+    ("ban", "Ban", "Bans & kicks", "member_mod", "gavel",
+     "Ban a member, with an optional reason."),
+    ("tempban", "Temporary ban", "Bans & kicks", "member_mod", "clock",
+     "Ban for a set time, then unban automatically."),
+    ("softban", "Softban", "Bans & kicks", "member_mod", "wind",
+     "Ban and immediately unban, to clear their messages."),
+    ("massban", "Mass ban", "Bans & kicks", "mass_mod", "layers",
+     "Ban several members at once from a list."),
+    ("softbanall", "Mass softban", "Bans & kicks", "mass_mod", "layers",
+     "Softban several members at once."),
+    ("unban", "Unban", "Bans & kicks", "member_mod", "undo-2",
+     "Lift a ban by user id."),
+    ("banlist", "Ban list", "Bans & kicks", "member_mod", "clipboard-list",
+     "List the server's current bans."),
+    ("kick", "Kick", "Bans & kicks", "member_mod", "footprints",
+     "Remove a member from the server."),
+    ("masskick", "Mass kick", "Bans & kicks", "mass_mod", "layers",
+     "Kick several members at once from a list."),
+    # Timeouts & warnings
+    ("timeout", "Timeout", "Timeouts & warnings", "member_mod", "timer",
+     "Time a member out for a set duration."),
+    ("untimeout", "End timeout", "Timeouts & warnings", "member_mod", "timer-off",
+     "End a member's timeout early."),
+    ("warn", "Warn", "Timeouts & warnings", "member_mod", "alert-triangle",
+     "Record a warning against a member."),
+    ("quickwarn", "Quick warn", "Timeouts & warnings", "member_mod", "zap",
+     "Warn a member and act on their running total."),
+    ("warnings", "View warnings", "Timeouts & warnings", "member_mod", "list",
+     "Show a member's warnings."),
+    ("delwarn", "Delete warning", "Timeouts & warnings", "member_mod", "trash",
+     "Remove one warning from a member."),
+    ("clearwarnings", "Clear warnings", "Timeouts & warnings", "member_mod", "eraser",
+     "Wipe every warning a member has."),
+    # Currency. The last field marks a command as *off by default*: a role that
+    # has never been saved in this editor keeps every command the bot already
+    # had, but a command the toggles themselves introduced is not something an
+    # unsaved role should be handed. Money is the one that matters here — it must
+    # be granted per role, never inherited by whoever can type the prefix.
+    ("amoney", "Give currency", "Currency", "currency", "coins",
+     "Add coins to a member. Aliases: addmoney, setbal, setbalance.", True),
+    ("rmoney", "Take currency", "Currency", "currency", "circle-minus",
+     "Take coins away. Alias: removemoney.", True),
+    # Members
+    ("nick", "Rename", "Members", "member_mod", "pencil",
+     "Change a member's nickname."),
+    ("resetnick", "Reset nickname", "Members", "member_mod", "pencil-off",
+     "Clear a member's nickname."),
+    ("dm", "Direct message", "Members", "member_mod", "mail",
+     "Send a member a DM from the bot."),
+    ("id", "Show ids", "Members", None, "fingerprint",
+     "Show a member and server's ids."),
+    ("created", "Account age", "Members", None, "calendar-plus",
+     "When an account was created."),
+    ("joined", "Join date", "Members", None, "calendar-check",
+     "When a member joined the server."),
+    ("rolecount", "Role count", "Members", None, "hash",
+     "How many members hold each role."),
+    ("perms", "Show permissions", "Members", None, "key-round",
+     "A member's Discord permissions."),
+    ("joinposition", "Join position", "Members", None, "list-ordered",
+     "Where a member sits in the join order."),
+    ("recentjoins", "Recent joins", "Members", None, "user-plus",
+     "Members who joined recently."),
+    ("newaccounts", "New accounts", "Members", None, "user-round-plus",
+     "Recently created accounts in the server."),
+    # Messages & channels
+    ("purge", "Purge messages", "Messages & channels", "purge", "eraser",
+     "Bulk-delete messages from a channel."),
+    ("purgeuser", "Purge a member's messages", "Messages & channels", "purge", "eraser",
+     "Delete one member's recent messages."),
+    ("purgebots", "Purge bot messages", "Messages & channels", "purge", "eraser",
+     "Delete bot messages from a channel."),
+    ("purgecontains", "Purge matching text", "Messages & channels", "purge", "eraser",
+     "Delete messages containing a phrase."),
+    ("purgeembeds", "Purge embeds", "Messages & channels", "purge", "eraser",
+     "Delete messages that carry an embed."),
+    ("purgeattachments", "Purge attachments", "Messages & channels", "purge", "eraser",
+     "Delete messages that carry a file."),
+    ("purgeuserall", "Purge everywhere", "Messages & channels", "purge", "eraser",
+     "Delete a member's messages across channels."),
+    ("purgechannel", "Empty a channel", "Messages & channels", "channel_edit", "trash-2",
+     "Delete every message in a channel."),
+    ("nuke", "Nuke channel", "Messages & channels", "channel_edit", "bomb",
+     "Recreate a channel from scratch."),
+    ("slowmode", "Slowmode", "Messages & channels", "channel_edit", "hourglass",
+     "Set a channel's slowmode."),
+    ("lock", "Lock channel", "Messages & channels", "channel_edit", "lock",
+     "Stop members talking in a channel."),
+    ("unlock", "Unlock channel", "Messages & channels", "channel_edit", "lock-open",
+     "Let members talk again."),
+    ("lockall", "Lock every channel", "Messages & channels", "channel_edit", "lock",
+     "Lock the whole server down."),
+    ("unlockall", "Unlock every channel", "Messages & channels", "channel_edit", "lock-open",
+     "Undo a server-wide lock."),
+    ("lockuser", "Lock a member out", "Messages & channels", "channel_edit", "user-lock",
+     "Stop one member talking in a channel."),
+    ("unlockuser", "Let a member back in", "Messages & channels", "channel_edit", "user-check",
+     "Undo a per-member channel lock."),
+    ("hide", "Hide channel", "Messages & channels", "channel_edit", "eye-off",
+     "Hide a channel from everyone."),
+    ("unhide", "Unhide channel", "Messages & channels", "channel_edit", "eye",
+     "Make a hidden channel visible again."),
+    ("topic", "Set topic", "Messages & channels", "channel_edit", "text",
+     "Change a channel's topic."),
+    ("rename", "Rename channel", "Messages & channels", "channel_edit", "pencil",
+     "Rename a channel."),
+    # Roles
+    ("addrole", "Add role", "Roles", "role_assign", "user-check",
+     "Give a member a role."),
+    ("removerole", "Remove role", "Roles", "role_assign", "user-minus",
+     "Take a role off a member."),
+    ("roleall", "Role everyone", "Roles", "role_assign", "users",
+     "Give a role to every member."),
+    ("rolecreate", "Create role", "Roles", "role_manager", "shield-plus",
+     "Create a new role."),
+    ("roledelete", "Delete role", "Roles", "role_manager", "trash-2",
+     "Delete a role."),
+    ("rolecolor", "Recolour role", "Roles", "role_manager", "palette",
+     "Change a role's colour."),
+    # Broadcast
+    ("say", "Say", "Broadcast", "broadcast", "megaphone",
+     "Post a message as the bot."),
+    ("embed", "Send embed", "Broadcast", "broadcast", "layout",
+     "Post a rich embed."),
+    ("poll", "Poll", "Broadcast", "broadcast", "bar-chart-3",
+     "Start a reaction poll."),
+    ("massdm", "Mass DM", "Broadcast", "broadcast", "send",
+     "DM a group of members."),
+    ("raidmode", "Raid mode", "Broadcast", "broadcast", "siren",
+     "Toggle the server's raid lockdown."),
+    # Notes & watchlist
+    ("note", "Add note", "Notes & watchlist", "notes", "notebook-pen",
+     "Write a staff note on a member."),
+    ("notes", "Read notes", "Notes & watchlist", "notes", "notebook",
+     "Read a member's staff notes."),
+    ("noteach", "Note in every guild", "Notes & watchlist", "notes", "notebook-pen",
+     "Record a note that follows the member everywhere."),
+    ("delnote", "Delete note", "Notes & watchlist", "notes", "notebook-x",
+     "Remove one note."),
+    ("clearnotes", "Clear notes", "Notes & watchlist", "notes", "eraser",
+     "Remove every note a member has."),
+    ("watch", "Watch", "Notes & watchlist", "watchlist", "eye",
+     "Put a member on the watchlist."),
+    ("unwatch", "Unwatch", "Notes & watchlist", "watchlist", "eye-off",
+     "Take a member off the watchlist."),
+    ("watchlist", "Read watchlist", "Notes & watchlist", "watchlist", "list",
+     "Show everyone being watched."),
+    # Verification & history
+    ("verification", "Verification panel", "Verification & history", "verification", "badge-check",
+     "Post the verification panel."),
+    ("checkbg", "Background check", "Verification & history", None, "search",
+     "Look a member up before letting them in."),
+    ("syncmembers", "Sync members", "Verification & history", None, "refresh-cw",
+     "Rebuild the synced member table."),
+    ("slogs", "System logs", "Verification & history", "logs_read", "scroll-text",
+     "Read the system log channel."),
+    ("history", "History", "Verification & history", "logs_read", "history",
+     "A member's full moderation history."),
+    ("vhistory", "Verification history", "Verification & history", "logs_read", "history",
+     "A member's verification history."),
+    ("mhistory", "Moderation history", "Verification & history", "logs_read", "history",
+     "A member's moderation history."),
+    ("rhistory", "Role history", "Verification & history", "logs_read", "history",
+     "A member's role changes."),
+    ("ehistory", "Economy history", "Verification & history", "logs_read", "history",
+     "A member's currency history."),
+]
+
+DASH_COMMANDS = [
+    {"id": c[0], "label": c[1], "group": c[2], "cap": c[3], "icon": c[4],
+     "desc": c[5], "default_off": bool(c[6]) if len(c) > 6 else False}
+    for c in _COMMAND_CATALOGUE
 ]
 
 DASH_PRESETS = [
@@ -3064,6 +3349,45 @@ DASH_PRESETS = [
 
 _SECTION_IDS = {s["id"] for s in DASH_SECTIONS}
 _CAP_IDS = {c["id"] for c in DASH_CAPS}
+_COMMAND_IDS = {c["id"] for c in DASH_COMMANDS}
+_COMMANDS_BY_ID = {c["id"]: c for c in DASH_COMMANDS}
+
+
+def command_entry(name):
+    """The catalogue row for a Discord command name, or None when it is not gated."""
+    return _COMMANDS_BY_ID.get(str(name or "").lower())
+
+
+def command_default_off(name):
+    """Whether a command is off for a role that has no saved command list.
+
+    Only the commands this editor introduced are: everything else keeps working
+    for an unsaved role exactly as it did before the toggles existed. See
+    `bot._command_toggle_gate`, which is the only caller.
+    """
+    entry = command_entry(name)
+    return bool(entry and entry.get("default_off"))
+
+
+def command_grant_for_roles(role_ids):
+    """The command ids a member's highest configured role may run.
+
+    `role_ids` must be in descending Discord position order, the same order the
+    dashboard resolves access in. None means "nothing is configured", which is
+    the honest answer for every role saved before the command toggles existed:
+    such a role keeps every command it can already run in Discord, so this can
+    never lock a server's staff out of the bot by being switched on.
+    """
+    try:
+        perms = _load_dash_perms()
+    except Exception:
+        return None
+    roles_map = perms.get("roles") or {}
+    for rid in role_ids:
+        key = str(rid)
+        if key in roles_map:
+            return _normalize_role_entry(roles_map[key]).get("commands")
+    return None
 
 # ----------------------------------------------------------
 # Discord role permissions the dashboard's role editor exposes.
@@ -3415,19 +3739,29 @@ def _member_title(role_ids, role_names, titles=None):
 
 
 def _normalize_role_entry(entry):
-    """Accept both the legacy list-of-tabs shape and the new dict shape."""
+    """Accept both the legacy list-of-tabs shape and the new dict shape.
+
+    `commands` is deliberately tri-state. None means the role was saved before
+    the command toggles existed, so nothing is enforced for it; a list (even an
+    empty one) is a real decision and is enforced exactly as written.
+    """
     if isinstance(entry, list):
         return {"tabs": sorted({t for t in entry if t in _SECTION_IDS}), "caps": [],
-                "editor": _normalize_editor({})}
+                "commands": None, "editor": _normalize_editor({})}
     if isinstance(entry, dict):
         tabs = entry.get("tabs") if isinstance(entry.get("tabs"), list) else []
         caps = entry.get("caps") if isinstance(entry.get("caps"), list) else []
+        raw_commands = entry.get("commands")
+        commands = None
+        if isinstance(raw_commands, list):
+            commands = sorted({str(c) for c in raw_commands if str(c) in _COMMAND_IDS})
         return {
             "tabs": sorted({str(t) for t in tabs if str(t) in _SECTION_IDS}),
             "caps": sorted({str(c) for c in caps if str(c) in _CAP_IDS}),
+            "commands": commands,
             "editor": _normalize_editor(entry.get("editor")),
         }
-    return {"tabs": [], "caps": [], "editor": _normalize_editor({})}
+    return {"tabs": [], "caps": [], "commands": None, "editor": _normalize_editor({})}
 
 
 def _dash_perms_payload():
@@ -3440,6 +3774,7 @@ def _dash_perms_payload():
         "roles": roles,
         "sections": DASH_SECTIONS,
         "capabilities": DASH_CAPS,
+        "commands": DASH_COMMANDS,
         "presets": DASH_PRESETS,
         "titles": _load_titles(perms),
         "title_effects": DASH_TITLE_EFFECTS,
@@ -3494,6 +3829,9 @@ def _access_for_roles(role_ids, perms, role_labels=None, guild=None):
             "allowed": bool(caps),
             "tabs": [],
             "caps": caps,
+            # Nothing was saved for this role, so the command toggles do not
+            # apply to it either — see command_grant_for_roles.
+            "commands": None,
             "granted_by": ({"id": str(top.id), "name": top.name} if top is not None else None),
             "editor": _normalize_editor({}),
         }
@@ -3503,6 +3841,7 @@ def _access_for_roles(role_ids, perms, role_labels=None, guild=None):
         "allowed": bool(entry["tabs"] or entry["caps"]),
         "tabs": entry["tabs"],
         "caps": entry["caps"],
+        "commands": entry["commands"],
         "granted_by": granted_by,
         "editor": entry["editor"],
     }
@@ -3723,7 +4062,16 @@ def api_owner_access():
 
         if not _save_dash_perms(perms):
             return _fail("Failed to save permissions.", 500)
-        return jsonify({"status": "success", "message": "Dashboard access saved.", **_dash_perms_payload()})
+
+        # The member page reads its badges from the `staff_titles` table rather
+        # than from this file, so the mirror has to be refreshed on every save;
+        # otherwise a badge only ever exists inside the dashboard. A failure here
+        # is reported but does not fail the save — the panel's copy is the truth.
+        titles_ok, titles_error = mirror_staff_titles(perms)
+        message = "Dashboard access saved."
+        if not titles_ok:
+            message += f" Member page badges were not updated: {titles_error}"
+        return jsonify({"status": "success", "message": message, **_dash_perms_payload()})
     return jsonify(_dash_perms_payload())
 
 
@@ -3739,6 +4087,8 @@ def _access_catalog():
                       "desc": s.get("desc", "")} for s in DASH_SECTIONS],
         "caps": [{"id": c["id"], "label": c["label"], "group": c.get("group", "Other"),
                   "desc": c.get("desc", "")} for c in DASH_CAPS],
+        "commands": [{"id": c["id"], "label": c["label"], "group": c["group"],
+                      "cap": c["cap"], "desc": c["desc"]} for c in DASH_COMMANDS],
     }
 
 
@@ -6890,6 +7240,25 @@ def _queue_loop():
         time.sleep(QUEUE_BURST_SECONDS if handled else QUEUE_IDLE_SECONDS)
 
 
+def mirror_staff_titles(perms=None):
+    """Push the panel's badge rules into `staff_titles`. Returns (ok, error)."""
+    try:
+        return upsert_staff_titles(_load_titles(perms))
+    except Exception as exc:   # not configured, DNS, TLS: the panel still works
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _titles_startup_sync():
+    """Fill `staff_titles` once at boot, so a panel that never re-saved its
+    badges still has them on the member page (which is how the mirror first runs
+    on an existing install)."""
+    ok, error = mirror_staff_titles()
+    if ok:
+        print("[titles] badge rules mirrored to Supabase for the member page.")
+    else:
+        print(f"[titles] could not mirror badge rules: {error}")
+
+
 def start_queue_worker():
     """Start the queue worker. True when this call is the one that started it."""
     global _queue_thread
@@ -6898,6 +7267,7 @@ def start_queue_worker():
             return False
         _queue_thread = threading.Thread(target=_queue_loop, name="ticket-queue", daemon=True)
         _queue_thread.start()
+        threading.Thread(target=_titles_startup_sync, name="titles-sync", daemon=True).start()
         return True
 
 

@@ -20,7 +20,9 @@ from config import (
     MESSAGE_CATEGORY_ID,
     SYSTEM_CATEGORY_ID,
     SUPPORT_LINK,
+    parse_money,
 )
+from supabase_helper import add_currency
 
 from antiraid import (
     setup_anti_raid,
@@ -1153,6 +1155,128 @@ async def posthelp(ctx: commands.Context, channel_id: int):
 # banner, roleinfo, channelinfo, uptime, roll, coinflip, 8ball) now live in the
 # member bot's `members.py`. This bot is staff-only, so members never see them
 # advertised as moderation-adjacent commands here.
+
+
+# ---------------------------------------------------------------------------
+# COMMAND TOGGLES
+# ---------------------------------------------------------------------------
+# Every role can be granted or denied individual commands from the dashboard's
+# Role Access editor (the "Commands" page). Only commands in that catalogue are
+# gated: anything not in it behaves exactly as it always has, and a role that was
+# saved before the toggles existed (so it has no command list) keeps everything.
+# This is why the feature can never lock a server's staff out of its own bot.
+
+
+def _command_bypasses_toggles(ctx) -> bool:
+    """Who a toggle cannot restrict: the server owner and administrators."""
+    author = ctx.author
+    guild = ctx.guild
+    if guild is not None and getattr(guild, "owner_id", None) == author.id:
+        return True
+    perms = getattr(author, "guild_permissions", None)
+    return bool(perms and perms.administrator)
+
+
+async def _command_toggle_gate(ctx) -> bool:
+    """Refuse a command whose toggle is off for every role the caller holds."""
+    try:
+        import dashboard
+
+        entry = dashboard.command_entry(getattr(getattr(ctx, "command", None), "name", ""))
+        if entry is None:
+            return True
+        if _command_bypasses_toggles(ctx):
+            return True
+
+        roles = []
+        for role in sorted(getattr(ctx.author, "roles", []), key=lambda r: r.position, reverse=True):
+            if not role.is_default():
+                roles.append(role.id)
+        granted = dashboard.command_grant_for_roles(roles)
+        if granted is None:
+            # Nothing saved for this role: it keeps every command it already had
+            # (see command_grant_for_roles), except a command that only exists
+            # because of these toggles — money is off until a role is granted it.
+            if not dashboard.command_default_off(entry["id"]):
+                return True
+        elif entry["id"] in granted:
+            return True
+    except Exception as exc:
+        # Never let a permissions lookup break a working command: the toggles
+        # are a restriction, so an unreadable answer means "leave as it was".
+        warn(f"Command toggle check failed for {getattr(ctx, 'command', None)}: {exc}")
+        return True
+
+    try:
+        await ctx.send(f"`{COMMAND_PREFIX}{entry['id']}` is switched off for your roles — "
+                       f"an admin can turn it on from the dashboard.")
+    except Exception:
+        pass
+    return False
+
+
+# The money commands are the one thing the catalogue marks as off by default:
+# an unsaved role is refused them by `_command_toggle_gate` instead of
+# inheriting them, so `>amoney` is only ever usable by a role an owner granted it
+# to (or by an administrator, who bypasses the toggles).
+
+
+bot.add_check(_command_toggle_gate)
+
+
+async def _change_currency(ctx, member, amount, sign: int):
+    """Shared body of the two money commands.
+
+    The balance lives in the shared `economy` table: the member page reads it,
+    and the member bot adopts a change from it on its next pass — which is what
+    makes this show up in `>bal` as well as on the site. Nothing here touches the
+    member bot's files.
+    """
+    if member is None or not amount:
+        return await ctx.send(f"> Use `{COMMAND_PREFIX}amoney @user 1K` to give, or "
+                              f"`{COMMAND_PREFIX}rmoney @user 500` to take away.")
+
+    delta = parse_money(amount, allow_negative=False)
+    if delta is None:
+        return await ctx.send("> That is not an amount I understand — try `500`, `1K`, "
+                              "`2.5M` or `1B` (1T is the ceiling).")
+    if getattr(member, "bot", False):
+        return await ctx.send("> That account is a bot.")
+
+    if sign < 0:
+        delta = -delta
+    try:
+        ok, before, after, error = await asyncio.to_thread(add_currency, member.id, delta)
+    except Exception as exc:
+        return await ctx.send(f"> Could not reach the currency store: {type(exc).__name__}: {exc}")
+    if not ok:
+        return await ctx.send(f"> Could not change the coins: {error}")
+    if after == before:
+        return await ctx.send(f"> {member.display_name} already has **{before:,}** coins — "
+                              f"nothing to change (the ceiling is 1T, and nobody goes below zero).")
+
+    moved = abs(after - before)
+    gained = after > before
+    embed = discord.Embed(
+        title=f"{'Added' if gained else 'Removed'} {moved:,} coins",
+        description=(f"**{member.display_name}** now has **{after:,}** coins "
+                     f"(was {before:,}).\nLive on the member site now, and in "
+                     f"`{COMMAND_PREFIX}bal` within seconds."),
+        color=discord.Color.green() if gained else discord.Color.red(),
+    )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="amoney", aliases=["addmoney", "setbal", "setbalance"])
+async def amoney(ctx: commands.Context, member: discord.Member = None, amount: str = None):
+    """Give a member coins: `>amoney @user 1K`, `>amoney 500` for yourself."""
+    await _change_currency(ctx, member if member is not None else ctx.author, amount, sign=1)
+
+
+@bot.command(name="rmoney", aliases=["removemoney"])
+async def rmoney(ctx: commands.Context, member: discord.Member = None, amount: str = None):
+    """Take coins from a member: `>rmoney @user 500`."""
+    await _change_currency(ctx, member if member is not None else ctx.author, amount, sign=-1)
 
 
 @bot.command(name="purge")

@@ -1,8 +1,11 @@
 import os
 import json
+import datetime
 import urllib.request
 import urllib.error
 from dotenv import load_dotenv
+
+from config import MONEY_MAX
 
 load_dotenv()
 
@@ -132,3 +135,130 @@ def fetch_all_member_ids():
         return {row["user_id"] for row in json.loads(raw)}
     except Exception:
         return set()
+
+
+# ---------------------------------------------------------------------------
+# CURRENCY
+# ---------------------------------------------------------------------------
+# The `economy` table is the one place the member bot and this process can both
+# reach, so it is the hand-off for a balance change: written here (the panel's
+# Currency button), or by the admin bot's money commands, and read back by the
+# member bot on its next pass — see referenced/wispcord/members.py.
+
+
+def fetch_economy(user_id):
+    """The stored economy row for a member, or None when it cannot be read."""
+    try:
+        status, raw = _request(
+            "GET",
+            f"economy?select=user_id,balance,bank,xp,level,wins,losses,streak"
+            f"&user_id=eq.{user_id}&limit=1",
+            use_service=True,
+        )
+    except RuntimeError:
+        return None
+    if status != 200:
+        return None
+    try:
+        rows = json.loads(raw)
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
+def add_currency(user_id, delta):
+    """Add currency — a negative delta takes it away.
+
+    Returns (ok, before, after, error). The balance is clamped to 0..MONEY_MAX,
+    so a removal can empty a wallet but never puts anyone in debt, and nobody
+    can be handed more than the ceiling.
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return False, 0, 0, "Supabase is not configured, so currency cannot be changed."
+
+    uid = str(user_id or "").strip()
+    if not uid.isdigit():
+        return False, 0, 0, "That member has no usable Discord id."
+
+    try:
+        delta = int(delta)
+    except Exception:
+        return False, 0, 0, "That amount is not a number."
+
+    before = int((fetch_economy(uid) or {}).get("balance") or 0)
+    after = max(0, min(MONEY_MAX, before + delta))
+
+    stamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    status, raw = _request(
+        "POST",
+        "economy?on_conflict=user_id",
+        data={"user_id": uid, "balance": after, "updated_at": stamp},
+        use_service=True,
+        extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+    )
+    if not (200 <= status < 300):
+        return False, before, before, f"Supabase rejected the change ({status}): {raw[:160]}"
+    return True, before, after, ""
+
+
+# ---------------------------------------------------------------------------
+# STAFF TITLES
+# ---------------------------------------------------------------------------
+
+
+def upsert_staff_titles(rows):
+    """Mirror the panel's badge rules into `staff_titles`, for the member page.
+
+    The dashboard keeps its own copy in `logging/dash_permissions.json`; the
+    member page reads this table, which is why a badge used to show up in the
+    panel and nowhere else. The list is the whole truth, so anything no longer in
+    it is deleted as well.
+
+    Returns (ok, error).
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return False, "Supabase is not configured."
+
+    payload = []
+    keep = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        tid = str(row.get("id") or "").strip()
+        label = str(row.get("label") or "").strip()
+        if not tid or not label:
+            continue
+        keep.append(tid)
+        payload.append({
+            "id": tid,
+            "label": label,
+            "prefix": str(row.get("prefix") or ""),
+            "suffix": str(row.get("suffix") or ""),
+            "priority": int(row.get("priority") or 0),
+            "roles": [str(r) for r in (row.get("roles") or [])],
+            "keywords": [str(k) for k in (row.get("keywords") or [])],
+            "style": row.get("style") if isinstance(row.get("style"), dict) else {},
+        })
+
+    if payload:
+        status, raw = _request(
+            "POST",
+            "staff_titles?on_conflict=id",
+            data=payload,
+            use_service=True,
+            extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+        )
+        if not (200 <= status < 300):
+            return False, f"Supabase rejected the titles ({status}): {raw[:160]}"
+
+    # A badge deleted in the panel has to stop showing on the member page too,
+    # so the mirror deletes whatever is no longer in the list.
+    if keep:
+        quoted = ",".join('"%s"' % tid.replace('"', "") for tid in keep)
+        path = f"staff_titles?id=not.in.({quoted})"
+    else:
+        path = "staff_titles?id=not.is.null"
+    status, raw = _request("DELETE", path, use_service=True)
+    if not (200 <= status < 300):
+        return False, f"Supabase would not drop the retired titles ({status}): {raw[:160]}"
+    return True, ""

@@ -15,6 +15,56 @@ from console import warn
 load_dotenv()
 
 
+# ---------------------------------------------------------------------------
+# Currency
+# ---------------------------------------------------------------------------
+# Shared by the panel's Currency button and the admin bot's money commands, so
+# both accept the same shorthand and enforce the same ceiling.
+
+# 1T. Nobody can hold or be given more than this, in either direction.
+MONEY_MAX = 1_000_000_000_000
+
+_MONEY_SUFFIXES = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000, "t": MONEY_MAX}
+
+
+def parse_money(raw, allow_negative: bool = True):
+    """"500" / "1K" / "1.5M" / "2B" / "1T" → int, or None when it is not a number.
+
+    One suffix letter, case-insensitive. Anything above MONEY_MAX is refused
+    rather than clamped: a slipped zero in a currency box should never quietly
+    become a trillion coins.
+    """
+    text = str(raw or "").strip().lower().replace(",", "").replace("_", "").replace(" ", "")
+    if not text:
+        return None
+
+    negative = text.startswith("-")
+    if negative:
+        text = text[1:]
+
+    multiplier = 1
+    if text[-1:] in _MONEY_SUFFIXES:
+        multiplier = _MONEY_SUFFIXES[text[-1]]
+        text = text[:-1]
+
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    # float() happily reads "nan" and "inf", and both would poison the balance.
+    if value != value or value in (float("inf"), float("-inf")):
+        return None
+
+    amount = int(round(value * multiplier))
+    if negative:
+        amount = -amount
+    if not allow_negative and amount < 0:
+        return None
+    if abs(amount) > MONEY_MAX:
+        return None
+    return amount
+
+
 def _env_int(name: str, default: int) -> int:
     raw = (os.getenv(name) or "").strip()
     if not raw:
